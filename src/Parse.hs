@@ -43,7 +43,7 @@ langDef = emptyDef {
 whiteSpace :: P ()
 whiteSpace = Tok.whiteSpace lexer
 
-natural :: P Integer 
+natural :: P Integer
 natural = Tok.natural lexer
 
 stringLiteral :: P String
@@ -86,13 +86,13 @@ tyatom = (reserved "Nat" >> return NatTy)
          <|> parens typeP
 
 typeP :: P Ty
-typeP = try (do 
+typeP = try (do
           x <- tyatom
           reservedOp "->"
           y <- typeP
           return (FunTy x y))
       <|> tyatom
-          
+
 const :: P Const
 const = CNat <$> num
 
@@ -100,10 +100,10 @@ printOp :: P STerm
 printOp = do i <- getPos
              reserved "print"
              str <- option "" stringLiteral
-             (try (do a <- atom
-                      return (SPrint i str a))
+             try (do a <- atom
+                     return (SPrint i str a))
               <|>
-              return (SPrintUn i str))
+              return (SPrintUn i str)
 
 binary :: String -> BinaryOp -> Assoc -> Operator String () Identity STerm
 binary s f = Ex.Infix (reservedOp s >> return (SBinaryOp NoPos f))
@@ -198,47 +198,70 @@ letargs = try (do f <- var
           try (do x <- binding -- para permitir un unico argumneto sin parentesis
                   return [x])
 
+isrec :: P Bool
+isrec = try (reserved "rec" >> return True) <|> return False
+
 letexp :: P STerm
 letexp = do
   i <- getPos
   reserved "let"
-  isrec <- try (reserved "rec" >> return True) <|> return False
+  esrec <- isrec
   args <- letargs
-  reservedOp "="  
+  reservedOp "="
   def <- expr
   reserved "in"
   body <- expr
-  return (SLet i isrec args def body)
+  return (SLet i esrec args def body)
 
 -- | Parser de términos
 tm :: P STerm
 tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
 
+declargs :: P ((Name, Ty), [([Name], Ty)])
+declargs = try (do  name <- var
+                    args <- multibinders
+                    reservedOp ":"
+                    ty <- typeP
+                    return ((name, ty), args))
+            <|>
+            do name <- var
+               reservedOp ":"
+               ty <- typeP
+               return ((name, ty), [])
+-- para pensar: va con multibinders0 y sin el choice? como podria evitar parsear funciones mal escritas? (sin argumentos) mepa que no tiene mucho sentido
+
 -- | Parser de declaraciones
-decl :: P (Decl STerm)
-decl = do 
+decl :: P SDecl
+decl = do
      i <- getPos
      reserved "let"
-     v <- var
-     reservedOp "="
+     esrec <- isrec
+     ((name, ty), args) <- declargs
+     reservedOp "=" 
      t <- expr
-     return (Decl i v t)
+     return (SDecl i esrec name ty args t)
 
 -- | Parser de programas (listas de declaraciones) 
-program :: P [Decl STerm]
+program :: P [SDecl]
 program = many decl
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
-declOrTm :: P (Either (Decl STerm) STerm)
+declOrTm :: P (Either SDecl STerm)
 declOrTm =  try (Left <$> decl) <|> (Right <$> expr)
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada
 runP :: P a -> String -> String -> Either ParseError a
 runP p s filename = runParser (whiteSpace *> p <* eof) () filename s
 
---para debugging en uso interactivo (ghci)
+--para debugging en uso interactivo (ghci) de terms
 parse :: String -> STerm
 parse s = case runP expr s "" of
+            Right t -> t
+            Left e -> error ("no parse: " ++ show s)
+
+-- para debugging en uso interactivo (ghci) de declaraciones
+parse2 :: String -> SDecl
+parse2 s = case runP decl s "" of
             Right t -> t
             Left e -> error ("no parse: " ++ show s)

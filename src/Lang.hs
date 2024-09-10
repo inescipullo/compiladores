@@ -53,16 +53,16 @@ newtype Const = CNat Int
 data BinaryOp = Add | Sub
   deriving Show
 
-| tipo de datos de declaraciones superficiales
+-- | tipo de datos de declaraciones superficiales
 data SDecl = SDecl
   { sdeclPos  :: Pos
   , sdeclRec  :: Bool
   , sdeclName :: Name
   , sdeclType :: Ty
-  , sdeclBinds :: [(Var, Ty)]
+  , sdeclBinds :: [([Name], Ty)]
   , sdeclBody :: STerm
   }
-  deriving (Show, Functor)
+  deriving (Show)
 
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
 data Decl a = Decl
