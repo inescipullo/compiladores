@@ -154,6 +154,10 @@ t2doc at (SIfZ _ c t e) =
      , keywordColor (pretty "then"), nest 2 (t2doc False t)
      , keywordColor (pretty "else"), nest 2 (t2doc False e) ]
 
+t2doc at (SPrintUn _ str) =
+  parenIf at $
+  sep [keywordColor (pretty "print"), pretty (show str)]
+
 t2doc at (SPrint _ str t) =
   parenIf at $
   sep [keywordColor (pretty "print"), pretty (show str), t2doc True t]

@@ -97,12 +97,13 @@ const :: P Const
 const = CNat <$> num
 
 printOp :: P STerm
-printOp = do
-  i <- getPos
-  reserved "print"
-  str <- option "" stringLiteral
-  a <- atom
-  return (SPrint i str a)
+printOp = do i <- getPos
+             reserved "print"
+             str <- option "" stringLiteral
+             (try (do a <- atom
+                      return (SPrint i str a))
+              <|>
+              return (SPrintUn i str))
 
 binary :: String -> BinaryOp -> Assoc -> Operator String () Identity STerm
 binary s f = Ex.Infix (reservedOp s >> return (SBinaryOp NoPos f))
@@ -121,19 +122,43 @@ atom =     (flip SConst <$> const <*> getPos)
        <|> printOp
 
 -- parsea un par (variable : tipo)
-binding :: P (Name, Ty)
+binding :: P ([Name], Ty)
 binding = do v <- var
              reservedOp ":"
              ty <- typeP
-             return (v, ty)
+             return ([v], ty)
+
+multibinding :: P ([Name], Ty)
+multibinding = do x <- many1 var
+                  reservedOp ":"
+                  ty <- typeP
+                  return (x, ty)
+
+multibinders0 :: P [([Name], Ty)]
+multibinders0 = try (do (x,ty) <- parens multibinding
+                        xs <- multibinders0
+                        return ((x,ty):xs))
+                <|>
+                return []
+
+-- parsea una lista de multibindings
+multibinders :: P [([Name], Ty)]
+multibinders = do (x,ty) <- parens multibinding -- por lo menos un argumento
+                  xs <- multibinders0
+                  return ((x,ty):xs)
+
+multibindersfix :: P [([Name], Ty)]
+multibindersfix = do f <- parens binding -- el primer argumento es la funcion, que no puede tener multibinding
+                     args <- multibinders
+                     return (f:args)
 
 lam :: P STerm
 lam = do i <- getPos
          reserved "fun"
-         (v,ty) <- parens binding
+         args <- multibinders
          reservedOp "->"
          t <- expr
-         return (SLam i (v,ty) t)
+         return (SLam i args t)
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
@@ -155,22 +180,35 @@ ifz = do i <- getPos
 fix :: P STerm
 fix = do i <- getPos
          reserved "fix"
-         (f, fty) <- parens binding
-         (x, xty) <- parens binding
+         args <- multibindersfix
          reservedOp "->"
          t <- expr
-         return (SFix i (f,fty) (x,xty) t)
+         return (SFix i args t)
+
+letargs :: P [([Name], Ty)]
+letargs = try (do f <- var
+                  args <- multibinders
+                  reservedOp ":"
+                  ty <- typeP
+                  return (([f],ty):args))
+          <|>
+          try (do x <- parens binding -- para permitir un unico argumento con parentesis
+                  return [x])
+          <|>
+          try (do x <- binding -- para permitir un unico argumneto sin parentesis
+                  return [x])
 
 letexp :: P STerm
 letexp = do
   i <- getPos
   reserved "let"
-  (v,ty) <- parens binding
+  isrec <- try (reserved "rec" >> return True) <|> return False
+  args <- letargs
   reservedOp "="  
   def <- expr
   reserved "in"
   body <- expr
-  return (SLet i (v,ty) def body)
+  return (SLet i isrec args def body)
 
 -- | Parser de términos
 tm :: P STerm
