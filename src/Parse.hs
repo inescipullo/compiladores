@@ -10,7 +10,7 @@ Stability   : experimental
 
 -}
 
-module Parse (tm, Parse.parse, decl, runP, P, program, declOrTm) where
+module Parse (tm, Parse.parse, Parse.parse2, decl, runP, P, program, declOrTm) where
 
 import Prelude hiding ( const )
 import Lang hiding (getPos)
@@ -22,6 +22,7 @@ import Text.ParserCombinators.Parsec.Language --( GenLanguageDef(..), emptyDef )
 import qualified Text.Parsec.Expr as Ex
 import Text.Parsec.Expr (Operator, Assoc)
 import Control.Monad.Identity (Identity)
+import Control.Monad.ST (ST)
 
 type P = Parsec String ()
 
@@ -231,7 +232,7 @@ declargs = try (do  name <- var
 -- para pensar: va con multibinders0 y sin el choice? como podria evitar parsear funciones mal escritas? (sin argumentos) mepa que no tiene mucho sentido
 
 -- | Parser de declaraciones
-decl :: P SDecl
+decl :: P (SDecl STerm)
 decl = do
      i <- getPos
      reserved "let"
@@ -242,12 +243,12 @@ decl = do
      return (SDecl i esrec name ty args t)
 
 -- | Parser de programas (listas de declaraciones) 
-program :: P [SDecl]
+program :: P [SDecl STerm]
 program = many decl
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
-declOrTm :: P (Either SDecl STerm)
+declOrTm :: P (Either (SDecl STerm) STerm)
 declOrTm =  try (Left <$> decl) <|> (Right <$> expr)
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada
@@ -261,7 +262,7 @@ parse s = case runP expr s "" of
             Left e -> error ("no parse: " ++ show s)
 
 -- para debugging en uso interactivo (ghci) de declaraciones
-parse2 :: String -> SDecl
+parse2 :: String -> SDecl STerm
 parse2 s = case runP decl s "" of
             Right t -> t
             Left e -> error ("no parse: " ++ show s)

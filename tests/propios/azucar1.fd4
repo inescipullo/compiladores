@@ -1,3 +1,7 @@
 # Pruebas de azucar sintactico
 
 let f (g: Nat -> Nat) : Nat = 1 + 2 in g (print "x=") # print unario
+
+# Para correr solo elab 
+# :l src/Elab.hs src/Parse.hs
+# runFD4 (elab (Parse.parse "let f (x:Nat) : Nat = x + 1 in f 1")) (Global.Conf False Global.Interactive)
