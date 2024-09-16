@@ -183,6 +183,7 @@ binding2doc (x, ty) =
 multibinding2doc :: ([Name], Ty) -> Doc AnsiStyle
 multibinding2doc ([x], ty) = binding2doc (x, ty)
 multibinding2doc (x:xs, ty) = parens (sep (map name2doc (x:xs) ++ [pretty ":", ty2doc ty]))
+multibinding2doc ([], ty) = error "No debería entrar en este caso nunca"
 
 multibinders2doc :: [([Name], Ty)] -> Doc AnsiStyle
 multibinders2doc [] = mempty

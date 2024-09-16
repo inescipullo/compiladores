@@ -81,9 +81,13 @@ demultibinding ((vs,ty):bs) = map (\v -> ([v],ty)) vs ++ demultibinding bs
 
 -- | convierto terminos con multibinders en terminos con binders simples
 multibinders2binders :: STerm -> STerm
-multibinders2binders (SLam p bs t) = SLam p (demultibinding bs) t
-multibinders2binders (SFix p bs t) = SFix p (demultibinding bs) t
-multibinders2binders (SLet p b bs def body) = SLet p b (demultibinding bs) def body
+multibinders2binders (SLam p bs t) = SLam p (demultibinding bs) (multibinders2binders t)
+multibinders2binders (SFix p bs t) = SFix p (demultibinding bs) (multibinders2binders t)
+multibinders2binders (SLet p b bs def body) = SLet p b (demultibinding bs) (multibinders2binders def) (multibinders2binders body)
+multibinders2binders (SApp p t1 t2) = SApp p (multibinders2binders t1) (multibinders2binders t2)
+multibinders2binders (SPrint p s t) = SPrint p s (multibinders2binders t)
+multibinders2binders (SBinaryOp p op t1 t2) = SBinaryOp p op (multibinders2binders t1) (multibinders2binders t2)
+multibinders2binders (SIfZ p t1 t2 t3) = SIfZ p (multibinders2binders t1) (multibinders2binders t2) (multibinders2binders t3)
 multibinders2binders x = x
 
 -- | armo los tipos de las funciones una vez que tengo los binders simples
@@ -107,7 +111,7 @@ desugar (SLet p True (([f], fty):x:xs) def body) =
      return (SLet p False [([f], buildFunType (x:xs) fty)] def' body')
 -- Let fun
 desugar (SLet p False (([f], fty):xs) def body) =
-  do def' <- desugar (SLam p (([f], fty):xs) def)
+  do def' <- desugar (SLam p xs def)
      body' <- desugar body
      return (SLet p False [([f], buildFunType xs fty)] def' body')
 desugar (SLet p _ (x:_) _ _) = failPosFD4 p "Error sacando azúcar. Falló el demultibinding. No debería haber multibinding ni el primer argumento de SLet debe no estar en un multibinder."
@@ -149,37 +153,18 @@ desugar (SPrint p str t) =
      return (SPrint p str t')
 desugar x = return x
 
-
--- | resticciones en cant de binders 
--- | sfix necesita dos args
--- | slet necesita 1 arg
-{-
-checkCantArgs :: MonadFD4 m => STerm -> m STerm
-checkCantArgs fix@(SFix p (x:y:xs) t) = return fix
-checkCantArgs (SFix p _ _) = failPosFD4 p "Fix necesita al menos dos argumentos"
-checkCantArgs (SLet p b [] def body) = failPosFD4 p "Let necesita al menos un argumento"
-checkCantArgs (SLet p True [x] def body) = failPosFD4 p "Let rec necesita al menos dos argumentos"
-checkCantArgs x = return x
-
-
--- | eta expandir sprintun
-printun2fun :: STerm -> STerm
-printun2fun (SPrintUn p str) = SLam p [([x],Nat)] (SPrint p str (SV p x))
-printun2fun x = x
--}
-
 elabDecl :: MonadFD4 m => SDecl STerm -> m (Decl Term)
 elabDecl s = elabDecl' (multibinders2bindersDecl s)
 
 multibinders2bindersDecl :: SDecl STerm -> SDecl STerm
-multibinders2bindersDecl = fmap multibinders2binders
+multibinders2bindersDecl (SDecl p r n ty binds body) = SDecl p r n ty (demultibinding binds) (multibinders2binders body)
 
 elabDecl' :: MonadFD4 m => SDecl STerm -> m (Decl Term)
 elabDecl' (SDecl p False x ty [] t) = 
   do t' <- elab t
      return $ Decl p x ty t'
 elabDecl' (SDecl p False f fty xs t) = 
-  do t' <- elab (SLam p (([f], fty):xs) t)
+  do t' <- elab (SLam p xs t)
      return $ Decl p f (buildFunType xs fty) t'
 elabDecl' (SDecl p True f fty [] t) = failPosFD4 p "Error elaborando a Decl. Let rec sin argumentos."
 elabDecl' (SDecl p True f fty xs t) = 

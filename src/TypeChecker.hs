@@ -9,7 +9,7 @@ Stability   : experimental
 -}
 module TypeChecker (
    tc,
-   tcDecl 
+   tcDecl
    ) where
 
 import Lang
@@ -28,12 +28,12 @@ tc :: MonadFD4 m => Term         -- ^ término a chequear
 tc (V p (Bound _)) _ = failPosFD4 p "typecheck: No deberia haber variables Bound"
 tc (V p (Free n)) bs = case lookup n bs of
                            Nothing -> failPosFD4 p $ "Variable no declarada "++ppName n
-                           Just ty -> return (V (p,ty) (Free n)) 
+                           Just ty -> return (V (p,ty) (Free n))
 tc (V p (Global n)) bs = case lookup n bs of
                            Nothing -> failPosFD4 p $ "Variable no declarada "++ppName n
                            Just ty -> return (V (p,ty) (Global n))
 tc (Const p (CNat n)) _ = return (Const (p,NatTy) (CNat n))
-tc (Print p str t) bs = do 
+tc (Print p str t) bs = do
       tt <- tc t bs
       expect NatTy tt
       return (Print (p, NatTy) str tt)
@@ -79,10 +79,10 @@ tc (BinaryOp p op t u) bs = do
 typeError :: MonadFD4 m => TTerm   -- ^ término que se está chequeando  
                         -> String -- ^ mensaje de error
                         -> m a
-typeError t s = do 
+typeError t s = do
    ppt <- pp t
    failPosFD4 (getPos t) $ "Error de tipo en "++ppt++"\n"++s
- 
+
 -- | 'expect' chequea que el tipo esperado sea igual al que se obtuvo
 -- y lanza un error si no lo es.
 expect :: MonadFD4 m => Ty    -- ^ tipo esperado
@@ -90,7 +90,7 @@ expect :: MonadFD4 m => Ty    -- ^ tipo esperado
                      -> m TTerm
 expect ty tt = let ty' = getTy tt
                in if ty == ty' then return tt 
-                               else typeError tt $ 
+                               else typeError tt $
               "Tipo esperado: "++ ppTy ty
             ++"\npero se obtuvo: "++ ppTy ty'
 
@@ -104,12 +104,13 @@ domCod tt = case getTy tt of
 -- | 'tcDecl' chequea el tipo de una declaración
 -- y la agrega al entorno de tipado de declaraciones globales
 tcDecl :: MonadFD4 m  => Decl Term -> m (Decl TTerm)
-tcDecl (Decl p n t) = do
+tcDecl (Decl p n ty t) = do
     --chequear si el nombre ya está declarado
     mty <- lookupTy n
     case mty of
         Nothing -> do  --no está declarado 
                   s <- get
-                  tt <- tc t (tyEnv s)                 
-                  return (Decl p n tt)
+                  tt <- tc t (tyEnv s)
+                  expect ty tt
+                  return (Decl p n ty tt) 
         Just _  -> failPosFD4 p $ n ++" ya está declarado"
