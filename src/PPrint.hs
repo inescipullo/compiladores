@@ -37,6 +37,8 @@ import Prettyprinter
       Pretty(pretty) )
 import MonadFD4 ( gets, MonadFD4 )
 import Global ( GlEnv(glb) )
+import Data.List (delete)
+--import Control.Monad.RWS (Last(getLast))
 
 freshen :: [Name] -> Name -> Name
 freshen ns n = let cands = n : map (\i -> n ++ show i) [0..] 
@@ -192,7 +194,10 @@ multibinders2doc [x] = multibinding2doc x
 multibinders2doc (x:xs) = sep [multibinding2doc x, multibinders2doc xs]
 
 multibinders2doclet :: [([Name], Ty)] -> Doc AnsiStyle
-multibinders2doclet (([x], ty):xs) = sep [name2doc x, multibinders2doc xs, pretty ":", ty2doc ty]
+multibinders2doclet [] = mempty
+multibinders2doclet (([], _):_) = error "Sin nombres de argumentos para un tipo en multibinders2doclet" -- nunca deberia entrar aca
+multibinders2doclet (([x], ty):xs) = sep [name2doc x, multibinders2doc xs, pretty ":", ty2doc ty] 
+multibinders2doclet ((x:s, ty):xs) = sep [name2doc x, multibinders2doc ((s, ty):xs), pretty ":", ty2doc ty]
 
 -- | Pretty printing de términos (String)
 pp :: MonadFD4 m => TTerm -> m String
@@ -254,15 +259,31 @@ binders2multibinders x = x
 render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
+getLastType :: Ty -> Ty
+getLastType (FunTy _ t) = getLastType t
+getLastType t = t
+
+resugarDecl :: Decl STerm -> SDecl STerm
+resugarDecl (Decl p f ty (SLam _ args t)) =
+  SDecl p False f (getLastType ty) args t
+resugarDecl (Decl p f ty (SFix _ (([f'], ty'):args) t)) | f == f' =
+  SDecl p True f' (getLastType ty) args t
+resugarDecl (Decl p x ty t) = 
+  SDecl p False x ty [] t 
+
 -- | Pretty printing de declaraciones
 ppDecl :: MonadFD4 m => Decl TTerm -> m String
 ppDecl (Decl p x ty t) = do 
   gdecl <- gets glb
+  let body = binders2multibinders $ resugar (openAll fst (delete x (map declName gdecl)) t)
+  let (SDecl p' is_rec x' ty' args' t') = resugarDecl (Decl p x ty body)
   return (render $ sep [defColor (pretty "let")
-                       , name2doc x 
+                       , if is_rec then defColor (pretty "rec") else mempty
+                       , name2doc x' 
+                       , multibinders2doc args'
                        , pretty ":"
-                       , ty2doc ty
+                       , ty2doc ty'
                        , defColor (pretty "=")] 
-                   <+> nest 2 (t2doc False (binders2multibinders (resugar (openAll fst (map declName gdecl) t)))))
+                   <+> nest 2 (t2doc False t'))
                          
 

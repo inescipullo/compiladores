@@ -1,7 +1,15 @@
 # Pruebas de azucar sintactico
 
-let f (g: Nat -> Nat) : Nat = 1 + 2 in g (print "x=") # print unario
+let f (g: Nat -> Nat) : Nat = 1 + 2 
+
+#let h in g (print "x=") # print unario
+let g : Nat -> Nat = let rec f (x:Nat) : Nat = ifz x then 1 else f (x-1) in f 1
 
 # Para correr solo elab 
 # :l src/Elab.hs src/Parse.hs
 # runFD4 (elab (Parse.parse "let f (x:Nat) : Nat = x + 1 in f 1")) (Global.Conf False Global.Interactive)
+
+# Para correr typechecker
+# cabal run compiladores2024 -- -t tests/..
+# pretty printea 
+
