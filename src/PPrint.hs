@@ -14,7 +14,8 @@ module PPrint (
     pp,
     ppTy,
     ppName,
-    ppDecl
+    ppDecl,
+    t2doc
     ) where
 
 import Lang
@@ -166,7 +167,7 @@ t2doc at (SLet _ is_rec args t t') =
   sep [
     sep [keywordColor (pretty "let")
        , if is_rec then keywordColor (pretty "rec") else mempty
-       , multibinders2doc args
+       , multibinders2doclet args
        , opColor (pretty "=") ]
   , nest 2 (t2doc False t)
   , keywordColor (pretty "in")
@@ -190,13 +191,65 @@ multibinders2doc [] = mempty
 multibinders2doc [x] = multibinding2doc x
 multibinders2doc (x:xs) = sep [multibinding2doc x, multibinders2doc xs]
 
+multibinders2doclet :: [([Name], Ty)] -> Doc AnsiStyle
+multibinders2doclet (([x], ty):xs) = sep [name2doc x, multibinders2doc xs, pretty ":", ty2doc ty]
+
 -- | Pretty printing de términos (String)
 pp :: MonadFD4 m => TTerm -> m String
 -- Uncomment to use the Show instance for Term
 {- pp = show -}
 pp t = do
        gdecl <- gets glb
-       return (render . t2doc False $ openAll fst (map declName gdecl) t)
+       return (render . t2doc False $ binders2multibinders (resugar (openAll fst (map declName gdecl) t)))
+
+-- | Agrego azúcar sintáctico a un término antes de imprimirlo
+resugar :: STerm -> STerm
+resugar (SLam p args (SLam p' args' t)) = resugar (SLam p (args++args') t)
+resugar (SLam p [(["x"],NatTy)] (SPrint p' str (SV p'' "x"))) | p==p' && p==p'' = SPrintUn p str
+resugar (SLam p args t) = SLam p args (resugar t)
+
+resugar (SFix p args (SLam p' args' t)) = resugar (SFix p (args++args') t)
+resugar (SFix p args t) = SFix p args (resugar t)
+
+resugar (SLet p False [([f],FunTy ty1 ty2)] (SLam p' [([x],ty1')] t) t') | ty1==ty1' = 
+  resugar (SLet p False [([f],ty2),([x],ty1)] t t')
+resugar (SLet p False (([f],FunTy ty1 ty2):xs) (SLam p' (([x],ty1'):xs') t) t') | ty1==ty1' = 
+  resugar (SLet p False ((([f],ty2):xs)++[([x],ty1)]) (SLam p' xs' t) t')
+
+resugar (SLet p False [([f],FunTy ty1 ty2)] (SFix p' [([_],FunTy ty1' ty2'),([x],ty1'')] t) t') | ty1==ty1' && ty1==ty1'' && ty2==ty2' = 
+  resugar (SLet p True [([f],ty2),([x],ty1)] t t')
+
+resugar (SLet p True (([f],FunTy ty2 ty3):([x1],ty1):xs) (SLam p' [([x2],ty2')] t) t') | ty2==ty2' = 
+  resugar (SLet p True (([f],ty3):([x1],ty1):xs++[([x2],ty2)]) t t')
+resugar (SLet p True (([f],FunTy ty2 ty3):([x1],ty1):xs) (SLam p' (([x2],ty2'):xs2) t) t') | ty2==ty2' = 
+  resugar (SLet p True (([f],ty3):([x1],ty1):xs++[([x2],ty2)]) (SLam p' xs2 t) t')
+
+resugar (SLet p is_rec args def body) = SLet p is_rec args (resugar def) (resugar body)
+
+resugar (SApp p t u) = SApp p (resugar t) (resugar u)
+resugar (SIfZ p c t e) = SIfZ p (resugar c) (resugar t) (resugar e)
+resugar (SBinaryOp p op t u) = SBinaryOp p op (resugar t) (resugar u)
+resugar (SPrint p str t) = SPrint p str (resugar t)
+resugar x = x
+
+
+-- | Convierto binders simples en multibinders
+remultibinding :: [([Name], Ty)] -> [([Name], Ty)]
+remultibinding [] = []
+remultibinding [x] = [x]
+remultibinding ((x1,ty1):(x2,ty2):xs) = 
+  if ty1 == ty2 then remultibinding ((x1++x2,ty1):xs) else (x1,ty1):remultibinding ((x2,ty2):xs)
+
+-- | Convierto terminos con binders simples en terminos con multibinders
+binders2multibinders :: STerm -> STerm
+binders2multibinders (SLam p bs t) = SLam p (remultibinding bs) (binders2multibinders t)
+binders2multibinders (SFix p bs t) = SFix p (remultibinding bs) (binders2multibinders t)
+binders2multibinders (SLet p b bs def body) = SLet p b (remultibinding bs) (binders2multibinders def) (binders2multibinders body)
+binders2multibinders (SApp p t1 t2) = SApp p (binders2multibinders t1) (binders2multibinders t2)
+binders2multibinders (SPrint p s t) = SPrint p s (binders2multibinders t)
+binders2multibinders (SBinaryOp p op t1 t2) = SBinaryOp p op (binders2multibinders t1) (binders2multibinders t2)
+binders2multibinders (SIfZ p t1 t2 t3) = SIfZ p (binders2multibinders t1) (binders2multibinders t2) (binders2multibinders t3)
+binders2multibinders x = x
 
 render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
@@ -210,6 +263,6 @@ ppDecl (Decl p x ty t) = do
                        , pretty ":"
                        , ty2doc ty
                        , defColor (pretty "=")] 
-                   <+> nest 2 (t2doc False (openAll fst (map declName gdecl) t)))
+                   <+> nest 2 (t2doc False (binders2multibinders (resugar (openAll fst (map declName gdecl) t)))))
                          
 
