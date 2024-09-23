@@ -15,6 +15,7 @@ module Elab ( elab, elabDecl) where
 import Lang
 import Subst
 import MonadFD4
+import Common (abort)
 
 -- | 'elab' transforma variables ligadas en índices de de Bruijn
 -- en un término dado. 
@@ -34,12 +35,15 @@ elab' env (SV p v) =
 elab' _ (SConst p c) = return (Const p c)
 elab' env (SLam p [([v],ty)] t) = 
   do t' <- elab' (v:env) t
-     return $ Lam p v ty (close v t')
+     ty' <- elabType ty
+     return $ Lam p v ty' (close v t')
 
 elab' env (SLam p _ t) = failPosFD4 p "Error elaborando a Term. Lam debería tener un solo argumento."
 elab' env (SFix p [([f],fty), ([x],xty)] t) = 
   do t' <- elab' (x:f:env) t
-     return $ Fix p f fty x xty (close2 f x t')
+     fty' <- elabType fty
+     xty' <- elabType xty
+     return $ Fix p f fty' x xty' (close2 f x t')
 elab' env (SFix p _ _) = failPosFD4 p "Error elaborando a Term. Fix debería tener dos argumentos."
 -- aca los tipos con listas de binders los voy a traer en listas unarias, si no fallo con monadfd4
 -- tambien lo mismo con las listas de vars
@@ -69,13 +73,14 @@ elab' env (SApp p h a) =
 elab' env (SLet p b [([v],vty)] def body) =
   do def' <- elab' env def
      body' <- elab' (v:env) body
-     return $ Let p v vty def' (close v body')
+     vty' <- elabType vty
+     return $ Let p v vty' def' (close v body')
 elab' env (SLet p True _ _ _) = failPosFD4 p "Error elaborando a Term. Let no puede ser recursivo."
 elab' env (SLet p _ _ _ _) = failPosFD4 p "Error elaborando a Term. Let debería tener un solo argumento."
 
 
 -- | convierto multibinders en binders simples
-demultibinding :: [([Name],Ty)] -> [([Name],Ty)]
+demultibinding :: [([Name],STy)] -> [([Name],STy)]
 demultibinding [] = []
 demultibinding ((vs,ty):bs) = map (\v -> ([v],ty)) vs ++ demultibinding bs
 
@@ -91,9 +96,9 @@ multibinders2binders (SIfZ p t1 t2 t3) = SIfZ p (multibinders2binders t1) (multi
 multibinders2binders x = x
 
 -- | armo los tipos de las funciones una vez que tengo los binders simples
-buildFunType :: [([Name],Ty)] -> Ty -> Ty
+buildFunType :: [([Name],STy)] -> STy -> STy
 buildFunType [] t = t
-buildFunType ((_,ty):bs) t = FunTy ty (buildFunType bs t)
+buildFunType ((_,ty):bs) t = SFunTy ty (buildFunType bs t)
 
 -- | Conversión a funciones originales
 -- | Si tengo argumentos es una fun. Si no tiene la cantidad correcta de argumentos, falla
@@ -133,7 +138,7 @@ desugar (SFix p (([f], fty):x:xs) t) =
   do t' <- desugar (SLam p xs t)
      return (SFix p [([f], fty), x] t') -- no hago el build aca pq en la regla de sugar del fix ya tiene el tipo fty construido
 
-desugar (SPrintUn p str) = return (SLam p [(["x"],NatTy)] (SPrint p str (SV p "x")))
+desugar (SPrintUn p str) = return (SLam p [(["x"],SNatTy)] (SPrint p str (SV p "x")))
 
 desugar (SApp p h a) = 
   do h' <- desugar h
@@ -158,17 +163,41 @@ elabDecl s = elabDecl' (multibinders2bindersDecl s)
 
 multibinders2bindersDecl :: SDecl STerm -> SDecl STerm
 multibinders2bindersDecl (SDecl p r n ty binds body) = SDecl p r n ty (demultibinding binds) (multibinders2binders body)
+multibinders2bindersDecl ty@(STDecl {}) = ty 
 
 elabDecl' :: MonadFD4 m => SDecl STerm -> m (Decl Term)
 elabDecl' (SDecl p False x ty [] t) = 
   do t' <- elab t
-     return $ Decl p x ty t'
+     ty' <- elabType ty
+     return $ Decl p x ty' t'
 elabDecl' (SDecl p False f fty xs t) = 
   do t' <- elab (SLam p xs t)
-     return $ Decl p f (buildFunType xs fty) t'
+     ty <- elabType (buildFunType xs fty)
+     return $ Decl p f ty t'
 elabDecl' (SDecl p True f fty [] t) = failPosFD4 p "Error elaborando a Decl. Let rec sin argumentos."
 elabDecl' (SDecl p True f fty xs t) = 
   do t' <- elab (SFix p (([f], buildFunType xs fty):xs) t)
-     return $ Decl p f (buildFunType xs fty) t'
+     ty <- elabType (buildFunType xs fty)
+     return $ Decl p f ty t'
+elabDecl' (STDecl p name tydef) = failPosFD4 p "Declaración de sinónimo de tipo no debe ser elaborada."
 
+elabType :: MonadFD4 m => STy -> m Ty
+elabType SNatTy = return $ NatTy Nothing
+elabType (SFunTy t1 t2) = 
+  do t1' <- elabType t1
+     t2' <- elabType t2
+     return $ FunTy Nothing t1' t2'
+elabType (STyDecl name) = do ty <- lookupTySyn name
+                             (case ty of
+                                Nothing -> failFD4 ("No se pudo encontrar la declaración de tipo correspondiente a "++name)
+                                Just t -> return t)
 
+elabTypeWithName :: MonadFD4 m => Name -> STy -> m Ty
+elabTypeWithName name SNatTy = return $ NatTy (Just name)
+elabTypeWithName name (SFunTy t1 t2) = 
+  do t1' <- elabType t1
+     t2' <- elabType t2
+     return $ FunTy (Just name) t1' t2' 
+elabTypeWithName name syn = failFD4 "No se puede elaborar un STyDecl" 
+                              
+                             

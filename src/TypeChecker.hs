@@ -89,10 +89,14 @@ expect :: MonadFD4 m => Ty    -- ^ tipo esperado
                      -> TTerm
                      -> m TTerm
 expect ty tt = let ty' = getTy tt
-               in if ty == ty' then return tt 
+               in if checkTyEq ty ty' then return tt 
                                else typeError tt $
               "Tipo esperado: "++ ppTy ty
             ++"\npero se obtuvo: "++ ppTy ty'
+
+checkTyEq :: Ty -> Ty -> Bool
+checkTyEq (NatTy _) (NatTy _) = True
+checkTyEq (FunTy _ t1 t2) (FunTy _ t1' t2') = checkTyEq t1 t1' && checkTyEq t2 t2'
 
 -- | 'domCod chequea que un tipo sea función
 -- | devuelve un par con el tipo del dominio y el codominio de la función

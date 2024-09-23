@@ -124,8 +124,17 @@ evalDecl (Decl p x ty e) = do
     e' <- eval e
     return (Decl p x ty e')
 
-handleDecl ::  MonadFD4 m => SDecl STerm -> m ()
-handleDecl d = do
+handleDecl :: MonadFD4 m => SDecl STerm -> m ()
+handleDecl (STDecl p name tydef) = 
+  do  ty <- elabTypeWithName name tydef 
+      def <- lookupTySyn name
+      (case def of
+        Nothing -> addTySyn name ty
+        t -> failPosFD4 p ("Sinónimo de tipo ya declarado para " ++ name))
+handleDecl d = handleDecl' d
+
+handleDecl' ::  MonadFD4 m => SDecl STerm -> m ()
+handleDecl' d = do
         m <- getMode
         case m of
           Interactive -> do

@@ -22,7 +22,7 @@ import Text.ParserCombinators.Parsec.Language --( GenLanguageDef(..), emptyDef )
 import qualified Text.Parsec.Expr as Ex
 import Text.Parsec.Expr (Operator, Assoc)
 import Control.Monad.Identity (Identity)
-import Control.Monad.ST (ST)
+--import Control.Monad.ST (ST)
 
 type P = Parsec String ()
 
@@ -82,17 +82,19 @@ getPos :: P Pos
 getPos = do pos <- getPosition
             return $ Pos (sourceLine pos) (sourceColumn pos)
 
-tyatom :: P Ty
-tyatom = (reserved "Nat" >> return NatTy)
+tyatom :: P STy
+tyatom = (reserved "Nat" >> return SNatTy)
          <|> parens typeP
 
-typeP :: P Ty
+typeP :: P STy
 typeP = try (do
           x <- tyatom
           reservedOp "->"
           y <- typeP
-          return (FunTy x y))
-      <|> tyatom
+          return (SFunTy x y))
+      <|> try tyatom
+      <|> do name <- var
+             return (STyDecl name) -- debería estar en atom?
 
 const :: P Const
 const = CNat <$> num
@@ -123,19 +125,19 @@ atom =     (flip SConst <$> const <*> getPos)
        <|> printOp
 
 -- parsea un par (variable : tipo)
-binding :: P ([Name], Ty)
+binding :: P ([Name], STy)
 binding = do v <- var
              reservedOp ":"
              ty <- typeP
              return ([v], ty)
 
-multibinding :: P ([Name], Ty)
+multibinding :: P ([Name], STy)
 multibinding = do x <- many1 var
                   reservedOp ":"
                   ty <- typeP
                   return (x, ty)
 
-multibinders0 :: P [([Name], Ty)]
+multibinders0 :: P [([Name], STy)]
 multibinders0 = try (do (x,ty) <- parens multibinding
                         xs <- multibinders0
                         return ((x,ty):xs))
@@ -143,12 +145,12 @@ multibinders0 = try (do (x,ty) <- parens multibinding
                 return []
 
 -- parsea una lista de multibindings
-multibinders :: P [([Name], Ty)]
+multibinders :: P [([Name], STy)]
 multibinders = do (x,ty) <- parens multibinding -- por lo menos un argumento
                   xs <- multibinders0
                   return ((x,ty):xs)
 
-multibindersfix :: P [([Name], Ty)]
+multibindersfix :: P [([Name], STy)]
 multibindersfix = do f <- parens binding -- el primer argumento es la funcion, que no puede tener multibinding
                      args <- multibinders
                      return (f:args)
@@ -186,7 +188,7 @@ fix = do i <- getPos
          t <- expr
          return (SFix i args t)
 
-letargs :: P [([Name], Ty)]
+letargs :: P [([Name], STy)]
 letargs = try (do f <- var
                   args <- multibinders
                   reservedOp ":"
@@ -218,7 +220,7 @@ letexp = do
 tm :: P STerm
 tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
 
-declargs :: P ((Name, Ty), [([Name], Ty)])
+declargs :: P ((Name, STy), [([Name], STy)])
 declargs = try (do  name <- var
                     args <- multibinders
                     reservedOp ":"
@@ -231,9 +233,21 @@ declargs = try (do  name <- var
                return ((name, ty), [])
 -- para pensar: va con multibinders0 y sin el choice? como podria evitar parsear funciones mal escritas? (sin argumentos) mepa que no tiene mucho sentido
 
--- | Parser de declaraciones
 decl :: P (SDecl STerm)
-decl = do
+decl = termDecl <|> tyDecl
+
+tyDecl :: P (SDecl STerm)
+tyDecl = do
+          i <- getPos
+          reserved "type"
+          name <- var
+          reserved "="
+          t <- typeP
+          return (STDecl i name t)
+
+-- | Parser de declaraciones
+termDecl :: P (SDecl STerm)
+termDecl = do
      i <- getPos
      reserved "let"
      esrec <- isrec
