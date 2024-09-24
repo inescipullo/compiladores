@@ -29,7 +29,7 @@ import Global
 import Errors
 import Lang
 import Parse ( P, tm, program, declOrTm, runP )
-import Elab ( elab, elabDecl)
+import Elab ( elab, elabDecl, elabTypeWithName)
 import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4

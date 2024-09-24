@@ -32,14 +32,14 @@ tc (V p (Free n)) bs = case lookup n bs of
 tc (V p (Global n)) bs = case lookup n bs of
                            Nothing -> failPosFD4 p $ "Variable no declarada "++ppName n
                            Just ty -> return (V (p,ty) (Global n))
-tc (Const p (CNat n)) _ = return (Const (p,NatTy) (CNat n))
+tc (Const p (CNat n)) _ = return (Const (p,NatTy Nothing) (CNat n))
 tc (Print p str t) bs = do
       tt <- tc t bs
-      expect NatTy tt
-      return (Print (p, NatTy) str tt)
+      expect (NatTy Nothing) tt
+      return (Print (p, (getTy tt)) str tt)
 tc (IfZ p c t t') bs = do
        ttc  <- tc c bs
-       expect NatTy ttc
+       expect (NatTy Nothing) ttc
        tt  <- tc t bs
        tt' <- tc t' bs
        let ty = getTy tt
@@ -47,7 +47,7 @@ tc (IfZ p c t t') bs = do
        return (IfZ (p,ty) ttc tt tt')
 tc (Lam p v ty t) bs = do
          tt <- tc (open v t) ((v,ty):bs)
-         return (Lam (p, FunTy ty (getTy tt)) v ty (close v tt))
+         return (Lam (p, FunTy Nothing ty (getTy tt)) v ty (close v tt))
 tc (App p t u) bs = do
          tt <- tc t bs
          (dom,cod) <- domCod tt
@@ -67,13 +67,13 @@ tc (Let p v ty def t) bs = do
          tdef <- tc def bs
          expect ty tdef
          tt <- tc (open v t) ((v,ty):bs)
-         return (Let (p,getTy tt) v ty tdef (close v tt))
+         return (Let (p,getTy tt) v (getTy tdef) tdef (close v tt))
 tc (BinaryOp p op t u) bs = do
          tt <- tc t bs
-         expect NatTy tt
+         expect (NatTy Nothing) tt
          tu <- tc u bs
-         expect NatTy tu
-         return (BinaryOp (p,NatTy) op tt tu)
+         expect (NatTy Nothing) tu
+         return (BinaryOp (p,getTy tt) op tt tu)
 
 -- | @'typeError' t s@ lanza un error de tipo para el término @t@ 
 typeError :: MonadFD4 m => TTerm   -- ^ término que se está chequeando  
@@ -97,6 +97,7 @@ expect ty tt = let ty' = getTy tt
 checkTyEq :: Ty -> Ty -> Bool
 checkTyEq (NatTy _) (NatTy _) = True
 checkTyEq (FunTy _ t1 t2) (FunTy _ t1' t2') = checkTyEq t1 t1' && checkTyEq t2 t2'
+checkTyEq _ _ = False
 
 -- | 'domCod chequea que un tipo sea función
 -- | devuelve un par con el tipo del dominio y el codominio de la función

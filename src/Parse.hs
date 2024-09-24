@@ -92,9 +92,9 @@ typeP = try (do
           reservedOp "->"
           y <- typeP
           return (SFunTy x y))
-      <|> try tyatom
-      <|> do name <- var
-             return (STyDecl name) -- debería estar en atom?
+        <|> try tyatom
+        <|> do name <- var
+               return (STyDecl name)
 
 const :: P Const
 const = CNat <$> num

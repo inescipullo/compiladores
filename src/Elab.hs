@@ -10,12 +10,11 @@ Este módulo permite elaborar términos y declaraciones para convertirlas desde
 fully named (@STerm) a locally closed (@Term@)
 -}
 
-module Elab ( elab, elabDecl) where
+module Elab ( elab, elabDecl, elabTypeWithName) where
 
 import Lang
 import Subst
 import MonadFD4
-import Common (abort)
 
 -- | 'elab' transforma variables ligadas en índices de de Bruijn
 -- en un término dado. 
@@ -189,7 +188,7 @@ elabType (SFunTy t1 t2) =
      return $ FunTy Nothing t1' t2'
 elabType (STyDecl name) = do ty <- lookupTySyn name
                              (case ty of
-                                Nothing -> failFD4 ("No se pudo encontrar la declaración de tipo correspondiente a "++name)
+                                Nothing -> failFD4 ("[elabType] No se pudo encontrar la declaración de tipo correspondiente a "++name)
                                 Just t -> return t)
 
 elabTypeWithName :: MonadFD4 m => Name -> STy -> m Ty
@@ -198,6 +197,9 @@ elabTypeWithName name (SFunTy t1 t2) =
   do t1' <- elabType t1
      t2' <- elabType t2
      return $ FunTy (Just name) t1' t2' 
-elabTypeWithName name syn = failFD4 "No se puede elaborar un STyDecl" 
+elabTypeWithName name (STyDecl syn) = do ty <- lookupTySyn syn
+                                         (case ty of
+                                              Nothing -> failFD4 ("[elabTypeWithName] No se pudo encontrar la declaración de tipo correspondiente a "++name)
+                                              Just t -> return t)
                               
                              
