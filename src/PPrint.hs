@@ -57,19 +57,19 @@ openAll gp ns (V p v) = case v of
 openAll gp ns (Const p c) = SConst (gp p) c
 openAll gp ns (Lam p x ty t) = 
   let x' = freshen ns x 
-  in SLam (gp p) [([x'],ty)] (openAll gp (x':ns) (open x' t))
+  in SLam (gp p) [([x'],ty2sty ty)] (openAll gp (x':ns) (open x' t))
 openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Fix p f fty x xty t) = 
   let 
     x' = freshen ns x
     f' = freshen (x':ns) f
-  in SFix (gp p) ([([f'],fty),([x'],xty)]) (openAll gp (x:f:ns) (open2 f' x' t))
+  in SFix (gp p) ([([f'],ty2sty fty),([x'],ty2sty xty)]) (openAll gp (x:f:ns) (open2 f' x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Let p v ty m n) = 
     let v'= freshen ns v 
-    in  SLet (gp p) False [([v'],ty)] (openAll gp ns m) (openAll gp (v':ns) (open v' n))
+    in  SLet (gp p) False [([v'],ty2sty ty)] (openAll gp ns m) (openAll gp (v':ns) (open v' n))
 
 --Colores
 constColor :: Doc AnsiStyle -> Doc AnsiStyle
@@ -96,14 +96,21 @@ ppName :: Name -> String
 ppName = id
 
 -- | Pretty printer para tipos (Doc)
-ty2doc :: Ty -> Doc AnsiStyle
-ty2doc NatTy     = typeColor (pretty "Nat")
-ty2doc (FunTy x@(FunTy _ _) y) = sep [parens (ty2doc x), typeOpColor (pretty "->"),ty2doc y]
-ty2doc (FunTy x y) = sep [ty2doc x, typeOpColor (pretty "->"),ty2doc y] 
+sty2doc :: STy -> Doc AnsiStyle
+sty2doc SNatTy     = typeColor (pretty "Nat")
+sty2doc (SFunTy x@(SFunTy _ _) y) = sep [parens (sty2doc x), typeOpColor (pretty "->"),sty2doc y]
+sty2doc (SFunTy x y) = sep [sty2doc x, typeOpColor (pretty "->"),sty2doc y] 
+sty2doc (STyDecl n) = typeColor (pretty n)
+
+ty2sty :: Ty -> STy
+ty2sty (NatTy Nothing) = SNatTy
+ty2sty (NatTy (Just n)) = STyDecl n
+ty2sty (FunTy Nothing t1 t2) = SFunTy (ty2sty t1) (ty2sty t2)
+ty2sty (FunTy (Just n) t1 t2) = STyDecl n
 
 -- | Pretty printer para tipos (String)
 ppTy :: Ty -> String
-ppTy = render . ty2doc
+ppTy = render . sty2doc . ty2sty
 
 c2doc :: Const -> Doc AnsiStyle
 c2doc (CNat n) = constColor (pretty (show n))
@@ -179,25 +186,25 @@ t2doc at (SBinaryOp _ o a b) =
   parenIf at $
   t2doc True a <+> binary2doc o <+> t2doc True b
 
-binding2doc :: (Name, Ty) -> Doc AnsiStyle
+binding2doc :: (Name, STy) -> Doc AnsiStyle
 binding2doc (x, ty) =
-  parens (sep [name2doc x, pretty ":", ty2doc ty])
+  parens (sep [name2doc x, pretty ":", sty2doc ty])
 
-multibinding2doc :: ([Name], Ty) -> Doc AnsiStyle
+multibinding2doc :: ([Name], STy) -> Doc AnsiStyle
 multibinding2doc ([x], ty) = binding2doc (x, ty)
-multibinding2doc (x:xs, ty) = parens (sep (map name2doc (x:xs) ++ [pretty ":", ty2doc ty]))
+multibinding2doc (x:xs, ty) = parens (sep (map name2doc (x:xs) ++ [pretty ":", sty2doc ty]))
 multibinding2doc ([], ty) = error "No debería entrar en este caso nunca"
 
-multibinders2doc :: [([Name], Ty)] -> Doc AnsiStyle
+multibinders2doc :: [([Name], STy)] -> Doc AnsiStyle
 multibinders2doc [] = mempty
 multibinders2doc [x] = multibinding2doc x
 multibinders2doc (x:xs) = sep [multibinding2doc x, multibinders2doc xs]
 
-multibinders2doclet :: [([Name], Ty)] -> Doc AnsiStyle
+multibinders2doclet :: [([Name], STy)] -> Doc AnsiStyle
 multibinders2doclet [] = mempty
 multibinders2doclet (([], _):_) = error "Sin nombres de argumentos para un tipo en multibinders2doclet" -- nunca deberia entrar aca
-multibinders2doclet (([x], ty):xs) = sep [name2doc x, multibinders2doc xs, pretty ":", ty2doc ty] 
-multibinders2doclet ((x:s, ty):xs) = sep [name2doc x, multibinders2doc ((s, ty):xs), pretty ":", ty2doc ty]
+multibinders2doclet (([x], ty):xs) = sep [name2doc x, multibinders2doc xs, pretty ":", sty2doc ty] 
+multibinders2doclet ((x:s, ty):xs) = sep [name2doc x, multibinders2doc ((s, ty):xs), pretty ":", sty2doc ty]
 
 -- | Pretty printing de términos (String)
 pp :: MonadFD4 m => TTerm -> m String
@@ -210,23 +217,23 @@ pp t = do
 -- | Agrego azúcar sintáctico a un término antes de imprimirlo
 resugar :: STerm -> STerm
 resugar (SLam p args (SLam p' args' t)) = resugar (SLam p (args++args') t)
-resugar (SLam p [(["x"],NatTy)] (SPrint p' str (SV p'' "x"))) | p==p' && p==p'' = SPrintUn p str
+resugar (SLam p [(["x"],SNatTy)] (SPrint p' str (SV p'' "x"))) | p==p' && p==p'' = SPrintUn p str
 resugar (SLam p args t) = SLam p args (resugar t)
 
 resugar (SFix p args (SLam p' args' t)) = resugar (SFix p (args++args') t)
 resugar (SFix p args t) = SFix p args (resugar t)
 
-resugar (SLet p False [([f],FunTy ty1 ty2)] (SLam p' [([x],ty1')] t) t') | ty1==ty1' = 
+resugar (SLet p False [([f],SFunTy ty1 ty2)] (SLam p' [([x],ty1')] t) t') | ty1==ty1' = 
   resugar (SLet p False [([f],ty2),([x],ty1)] t t')
-resugar (SLet p False (([f],FunTy ty1 ty2):xs) (SLam p' (([x],ty1'):xs') t) t') | ty1==ty1' = 
+resugar (SLet p False (([f],SFunTy ty1 ty2):xs) (SLam p' (([x],ty1'):xs') t) t') | ty1==ty1' = 
   resugar (SLet p False ((([f],ty2):xs)++[([x],ty1)]) (SLam p' xs' t) t')
 
-resugar (SLet p False [([f],FunTy ty1 ty2)] (SFix p' [([_],FunTy ty1' ty2'),([x],ty1'')] t) t') | ty1==ty1' && ty1==ty1'' && ty2==ty2' = 
+resugar (SLet p False [([f],SFunTy ty1 ty2)] (SFix p' [([_],SFunTy ty1' ty2'),([x],ty1'')] t) t') | ty1==ty1' && ty1==ty1'' && ty2==ty2' = 
   resugar (SLet p True [([f],ty2),([x],ty1)] t t')
 
-resugar (SLet p True (([f],FunTy ty2 ty3):([x1],ty1):xs) (SLam p' [([x2],ty2')] t) t') | ty2==ty2' = 
+resugar (SLet p True (([f],SFunTy ty2 ty3):([x1],ty1):xs) (SLam p' [([x2],ty2')] t) t') | ty2==ty2' = 
   resugar (SLet p True (([f],ty3):([x1],ty1):xs++[([x2],ty2)]) t t')
-resugar (SLet p True (([f],FunTy ty2 ty3):([x1],ty1):xs) (SLam p' (([x2],ty2'):xs2) t) t') | ty2==ty2' = 
+resugar (SLet p True (([f],SFunTy ty2 ty3):([x1],ty1):xs) (SLam p' (([x2],ty2'):xs2) t) t') | ty2==ty2' = 
   resugar (SLet p True (([f],ty3):([x1],ty1):xs++[([x2],ty2)]) (SLam p' xs2 t) t')
 
 resugar (SLet p is_rec args def body) = SLet p is_rec args (resugar def) (resugar body)
@@ -239,7 +246,7 @@ resugar x = x
 
 
 -- | Convierto binders simples en multibinders
-remultibinding :: [([Name], Ty)] -> [([Name], Ty)]
+remultibinding :: [([Name], STy)] -> [([Name],STy)]
 remultibinding [] = []
 remultibinding [x] = [x]
 remultibinding ((x1,ty1):(x2,ty2):xs) = 
@@ -260,16 +267,16 @@ render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
 getLastType :: Ty -> Ty
-getLastType (FunTy _ t) = getLastType t
+getLastType (FunTy _ _ t) = getLastType t
 getLastType t = t
 
 resugarDecl :: Decl STerm -> SDecl STerm
 resugarDecl (Decl p f ty (SLam _ args t)) =
-  SDecl p False f (getLastType ty) args t
+  SDecl p False f (ty2sty (getLastType ty)) args t
 resugarDecl (Decl p f ty (SFix _ (([f'], ty'):args) t)) | f == f' =
-  SDecl p True f' (getLastType ty) args t
+  SDecl p True f' (ty2sty (getLastType ty)) args t
 resugarDecl (Decl p x ty t) = 
-  SDecl p False x ty [] t 
+  SDecl p False x (ty2sty ty) [] t 
 
 -- | Pretty printing de declaraciones
 ppDecl :: MonadFD4 m => Decl TTerm -> m String
@@ -282,7 +289,7 @@ ppDecl (Decl p x ty t) = do
                        , name2doc x' 
                        , multibinders2doc args'
                        , pretty ":"
-                       , ty2doc ty'
+                       , sty2doc ty'
                        , defColor (pretty "=")] 
                    <+> nest 2 (t2doc False t'))
                          

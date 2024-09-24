@@ -102,7 +102,7 @@ checkTyEq (FunTy _ t1 t2) (FunTy _ t1' t2') = checkTyEq t1 t1' && checkTyEq t2 t
 -- | devuelve un par con el tipo del dominio y el codominio de la función
 domCod :: MonadFD4 m => TTerm -> m (Ty, Ty)
 domCod tt = case getTy tt of
-    FunTy d c -> return (d, c)
+    FunTy _ d c -> return (d, c)
     _         -> typeError tt $ "Se esperaba un tipo función, pero se obtuvo: " ++ ppTy (getTy tt)
 
 -- | 'tcDecl' chequea el tipo de una declaración
