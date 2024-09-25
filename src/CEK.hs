@@ -67,6 +67,12 @@ destroy v (FClos (VClosFun rho x xty t):k) = search t (v:rho) k
 destroy v@(VConst i _) (FClos (VClosFix rho f fty x xty t):k) = search t (v:VClos i (VClosFix rho f fty x xty t):rho) k -- quiero que la x quede arriba pq es lo mas adentro en bindings, el f despues (o mas abajo en la lista)
 destroy v@(VClos i _) (FClos (VClosFix rho f fty x xty t):k) = search t (v:VClos i (VClosFix rho f fty x xty t):rho) k
 -- caso let? entra directo al hacer la conversion de let a fun
+destroy (VConst (p,_) (CNat _)) (FApp2 _ _:_) = failPosFD4 p $ "El primer argumento de una aplicación debe ser una clausura (una función)."
+destroy (VConst (p,_) (CNat _)) (FBinaryOp2 op (VClos _ _):_) = failPosFD4 p $ "El segundo argumento de la operación binaria "++show op++" debe evaluar a una constante."
+destroy (VClos (p,_) _) (FPrint _:_) = failPosFD4 p $ "El argumento de un print debe evaluar a una constante."
+destroy (VClos (p,_) _) (FBinaryOp1 op _ _:_) = failPosFD4 p $ "El primer argumento de la operación binaria "++show op++" debe evaluar a una constante."
+destroy (VClos (p,_) _) (FBinaryOp2 op _:_) = failPosFD4 p $ "El segundo argumento de la operación binaria "++show op++" debe evaluar a una constante."
+destroy (VClos (p,_) _) (FIfZ _ _ _:__) = failPosFD4 p $ "El primer argumento de un IfZ debe evaluar a una constante."
 
 
 val2tterm :: Val -> TTerm
