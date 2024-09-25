@@ -34,6 +34,7 @@ import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
+import CEK
 
 prompt :: String
 prompt = "FD4> "
@@ -46,6 +47,7 @@ parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
+      <|> flag' CEK (long "cek" <> short 'k' <> help "Evaluar en la máquina CEK")
       )
    <*> pure False
 
@@ -124,6 +126,11 @@ evalDecl (Decl p x ty e) = do
     e' <- eval e
     return (Decl p x ty e')
 
+evalDeclCEK :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
+evalDeclCEK (Decl p x ty e) = do
+    e' <- evalCEK e
+    return (Decl p x ty e')
+
 handleDecl :: MonadFD4 m => SDecl STerm -> m ()
 handleDecl (STDecl p name tydef) = 
   do  ty <- elabTypeWithName name tydef 
@@ -133,6 +140,7 @@ handleDecl (STDecl p name tydef) =
         t -> failPosFD4 p ("Sinónimo de tipo ya declarado para " ++ name))
 handleDecl d = handleDecl' d
 
+-- solo llega acá si no es una declaración de tipo
 handleDecl' ::  MonadFD4 m => SDecl STerm -> m ()
 handleDecl' d = do
         m <- getMode
@@ -151,6 +159,10 @@ handleDecl' d = do
           Eval -> do
               td <- typecheckDecl d
               ed <- evalDecl td
+              addDecl ed
+          CEK -> do
+              td <- typecheckDecl d
+              ed <- evalDeclCEK td
               addDecl ed
 
       where

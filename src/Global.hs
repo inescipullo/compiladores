@@ -32,6 +32,8 @@ data Mode =
     Interactive
   | Typecheck
   | Eval
+  | CEK
+  
 data Conf = Conf {
     opt :: Bool,          --  ^ True, si estan habilitadas las optimizaciones.
     modo :: Mode

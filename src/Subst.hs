@@ -69,7 +69,7 @@ subst n (Sc1 m) = varChanger (\_ p n -> V p (Free n)) bnd m
    where bnd depth p i 
              | i <  depth = V p (Bound i)
              | i == depth = n
-             | otherwise  = abort "substN: M is not LC"
+             | otherwise  = abort "subst: M is not LC"
 
 -- `subst2 u1 u2 t1 sustituye índice de de Bruijn 0 en t por u1 y el índice 1 por u2. 
 -- Notar que t es un Scope con dos índices que escapan el término.
@@ -79,7 +79,24 @@ subst2 n1 n2 (Sc2 m) = varChanger (\_ p n -> V p (Free n)) bnd m
              | i <  depth = V p (Bound i)
              | i == depth = n2
              | i == depth+1 = n1
-             | otherwise  = abort "substN: M is not LC"
+             | otherwise  = abort "subst2: M is not LC"
+
+-- `substN [t0,..,tn] t` sustituye los índices de de Bruijn en t con
+-- los términos de la lista. Bound 0 pasa a t0, etc.
+--
+-- El término `t` debe tener a lo sumo tantos índices abiertos como
+-- la longitud de la lista. Si es localmente cerrado (i.e. no tiene
+-- índices abiertos), nada va a ser sustituido.
+--
+-- Ojo, no usa scopes.
+substN :: [Tm info Var] -> Tm info Var -> Tm info Var
+substN ns = varChanger (\_ p n -> V p (Free n)) bnd 
+   where bnd depth p i 
+             | i < depth = V p (Bound i)
+             | i >= depth && i < depth + nns 
+                  = ns !! (i-depth)
+             | otherwise = abort "substN: M is not LC"
+         nns = length ns
 
 -- `close n t` es la operación inversa a open. Reemplaza
 -- las variables `Free n` por la variable ligada `Bound 0`.
