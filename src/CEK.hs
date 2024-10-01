@@ -27,7 +27,7 @@ data Frame =
     | FBinaryOp1 BinaryOp Env TTerm
     | FBinaryOp2 BinaryOp Val
     | FPrint String
-    -- no agg un frame correspondiente a let porque hago una conversion a app de fun
+    | FLet Env TTerm
 
 type Kont = [Frame]
 
@@ -46,9 +46,8 @@ search (V (p,_) (Global x)) rho k = do
 search (Const i c) _ k = destroy (VConst i c) k
 search (Lam i x xty (Sc1 t)) rho k = destroy (VClos i (VClosFun rho x xty t)) k
 search (Fix i f fty x xty (Sc2 t)) rho k = destroy (VClos i (VClosFix rho f fty x xty t)) k
-search (Let i x xty e sct) rho k = search (App i (Lam i x xty sct) e) rho k -- conversion let a fun se podria charlar
+search (Let _ _ _ t1 (Sc1 t2)) rho k = search t1 rho (FLet rho t2:k)
 
--- hay patterns que faltan donde deberiamos tirar errores mas descriptivos
 destroy :: MonadFD4 m => Val -> Kont -> m Val
 destroy v [] = 
     return v
@@ -66,13 +65,13 @@ destroy v (FClos (VClosFun rho x xty t):k) = search t (v:rho) k
 -- ver si alguno de estos no va
 destroy v@(VConst i _) (FClos (VClosFix rho f fty x xty t):k) = search t (v:VClos i (VClosFix rho f fty x xty t):rho) k -- quiero que la x quede arriba pq es lo mas adentro en bindings, el f despues (o mas abajo en la lista)
 destroy v@(VClos i _) (FClos (VClosFix rho f fty x xty t):k) = search t (v:VClos i (VClosFix rho f fty x xty t):rho) k
--- caso let? entra directo al hacer la conversion de let a fun
-destroy (VConst (p,_) (CNat _)) (FApp2 _ _:_) = failPosFD4 p $ "El primer argumento de una aplicación debe ser una clausura (una función)."
+destroy v ((FLet rho t):k) = search t (v:rho) k
+destroy (VConst (p,_) (CNat _)) (FApp2 _ _:_) = failPosFD4 p "El primer argumento de una aplicación debe ser una clausura (una función)."
 destroy (VConst (p,_) (CNat _)) (FBinaryOp2 op (VClos _ _):_) = failPosFD4 p $ "El segundo argumento de la operación binaria "++show op++" debe evaluar a una constante."
-destroy (VClos (p,_) _) (FPrint _:_) = failPosFD4 p $ "El argumento de un print debe evaluar a una constante."
+destroy (VClos (p,_) _) (FPrint _:_) = failPosFD4 p "El argumento de un print debe evaluar a una constante."
 destroy (VClos (p,_) _) (FBinaryOp1 op _ _:_) = failPosFD4 p $ "El primer argumento de la operación binaria "++show op++" debe evaluar a una constante."
 destroy (VClos (p,_) _) (FBinaryOp2 op _:_) = failPosFD4 p $ "El segundo argumento de la operación binaria "++show op++" debe evaluar a una constante."
-destroy (VClos (p,_) _) (FIfZ _ _ _:__) = failPosFD4 p $ "El primer argumento de un IfZ debe evaluar a una constante."
+destroy (VClos (p,_) _) (FIfZ {}:__) = failPosFD4 p "El primer argumento de un IfZ debe evaluar a una constante."
 
 
 val2tterm :: Val -> TTerm
