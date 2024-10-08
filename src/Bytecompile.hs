@@ -100,7 +100,24 @@ showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
-bcc t = failFD4 "implementame!"
+bcc (V _ (Bound i)) = return [ACCESS, i]
+bcc (V _ (Free x)) = failFD4 $ "Variable libre en bytecode "++x
+bcc (V _ (Global x)) = failFD4 $ "Variable global en bytecode "++x
+bcc (Const _ (CNat n)) = return [CONST, n]
+bcc (Lam _ _ _ (Sc1 t)) = do t' <- bcc t
+                             return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN]
+bcc (App _ t1 t2) = return [bcc t1, bcc t2, CALL]
+bcc (Print _ s t)  = do t' <- bcc t
+                        return $ [PRINT] ++ string2bc s ++ [NULL] ++ t' ++ [PRINTN]
+bcc (BinaryOp _ Add t1 t2) = return [bcc t1, bcc t2, ADD]
+bcc (BinaryOp _ Sub t1 t2) = return [bcc t1, bcc t2, SUB]
+bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bcc t
+                                 return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN, FIX]
+bcc (IfZ _ c t1 t2) = do c' <- bcc c
+                         t1' <- bcc t1
+                         t2' <- bcc t2
+                         return $ [c', length t1' + 2, IFZ] ++ t1' ++ [JUMP, length t2'] ++ t2'
+bcc (Let _ _ _ t1 (Sc1 t2)) = return [bcc t1, SHIFT, bcc t2, DROP]
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
