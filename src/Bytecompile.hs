@@ -82,7 +82,7 @@ pattern DROP     = 12
 pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
-pattern IFZ      = 16  
+pattern IFZ      = 16
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -124,10 +124,10 @@ bcc (Print _ s t)  = do t' <- bcc t
                         return $ [PRINT] ++ string2bc s ++ [NULL] ++ t' ++ [PRINTN]
 bcc (BinaryOp _ Add t1 t2) = do t1' <- bcc t1
                                 t2' <- bcc t2
-                                return $ t1'++ t2'++ [ADD]
+                                return $ t1'++ t2' ++ [ADD]
 bcc (BinaryOp _ Sub t1 t2) = do t1' <- bcc t1
                                 t2' <- bcc t2
-                                return $ t1'++ t2'++ [SUB]
+                                return $ t1'++ t2' ++ [SUB]
 bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bcc t
                                  return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN, FIX]
                                  -- mismo tema con el return
@@ -149,8 +149,32 @@ string2bc = map ord
 bc2string :: Bytecode -> String
 bc2string = map chr
 
+global2free :: Module -> Module
+global2free = map (\ (Decl i n ty t) -> Decl i n ty (rename t))
+                where rename (V i (Global n)) =  V i (Free n)
+                      rename t@(V _ _) = t
+                      rename t@(Const _ _) = t
+                      rename (Lam i n ty (Sc1 t)) = Lam i n ty (Sc1 (rename t))
+                      rename (App i t1 t2) = App i (rename t1) (rename t2)
+                      rename (Print i s t) = Print i s (rename t)
+                      rename (BinaryOp i b t1 t2) = BinaryOp i b (rename t1) (rename t2)
+                      rename (Fix i x xty f fty (Sc2 t)) = Fix i x xty f fty (Sc2 (rename t))
+                      rename (IfZ i t1 t2 t3) = IfZ i (rename t1) (rename t2) (rename t3)
+                      rename (Let i x xty t1 (Sc1 t2)) = Let i x xty (rename t1) (Sc1 (rename t2))
+
+module2tterm :: MonadFD4 m => Module -> m TTerm
+module2tterm [] = failFD4 "Modulo vacío"
+module2tterm [Decl _ _ _ t] = return t
+module2tterm (Decl p n ty t:m) = do t' <- module2tterm m
+                                    return $ Let (p,ty) n ty t (close n t')
+                                    -- el tipo de info esta mal, pero no se usa (lo dejamos asi?)
+                                    -- also, estoy haciendo bien el manejo de variables?
+
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = failFD4 "implementame!"
+bytecompileModule m = let m' = global2free m
+                      in do t <- module2tterm m'
+                            bc <- bcc t
+                            return $ bc ++ [STOP]
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()
