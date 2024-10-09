@@ -121,7 +121,8 @@ bcc (App _ t1 t2) = do t1' <- bcc t1
                        t2' <- bcc t2
                        return $ t1'++ t2'++ [CALL]
 bcc (Print _ s t)  = do t' <- bcc t
-                        return $ [PRINT] ++ string2bc s ++ [NULL] ++ t' ++ [PRINTN]
+                        return $ t' ++ [PRINT] ++ string2bc s ++ [NULL] ++ [PRINTN]
+                         --[PRINT] ++ string2bc s ++ [NULL] ++ t' ++ [PRINTN]
 bcc (BinaryOp _ Add t1 t2) = do t1' <- bcc t1
                                 t2' <- bcc t2
                                 return $ t1'++ t2' ++ [ADD]
@@ -214,4 +215,5 @@ runBC' (IFZ:len:c) e (I b:s) = if b == 0
                                   then runBC' c e s -- no tenemos que mantener b en la pila, no?
                                   else runBC' (drop len c) e s
 runBC' (STOP:_) _ _ = return ()
-runBC' _ _ _ = failFD4 "Bytecode mal formado"
+runBC' c _ _ = do printFD4 (showBC c)
+                  failFD4 "Bytecode mal formado"

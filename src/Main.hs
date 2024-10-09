@@ -20,7 +20,7 @@ import Data.List (nub, isPrefixOf, intercalate )
 import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
-import Data.Maybe ( fromMaybe )
+import Data.Maybe ( fromMaybe, catMaybes )
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -35,6 +35,8 @@ import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
 import TypeChecker ( tc, tcDecl )
 import CEK
+import Bytecompile (bcRead, runBC, bytecompileModule, showBC, bcWrite)
+import System.FilePath (dropExtension)
 
 prompt :: String
 prompt = "FD4> "
@@ -48,6 +50,8 @@ parseMode = (,) <$>
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
       <|> flag' CEK (long "cek" <> short 'k' <> help "Evaluar en la máquina CEK")
+      <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
+      <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
       )
    <*> pure False
 
@@ -66,6 +70,8 @@ main = execParser opts >>= go
     go :: (Mode,Bool,[FilePath]) -> IO ()
     go (Interactive,opt,files) =
               runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
+    go (RunVM, opt, files) =
+              runOrFail (Conf opt RunVM) $ mapM_ runBytecode files
     go (m,opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
@@ -107,13 +113,24 @@ loadFile f = do
     setLastFile filename
     parseIO filename program x
 
+runBytecode :: MonadFD4 m => FilePath -> m ()
+runBytecode f = do
+    bc <- liftIO $ bcRead f
+    runBC bc 
+    
 compileFile ::  MonadFD4 m => FilePath -> m ()
 compileFile f = do
     i <- getInter
     setInter False
     when i $ printFD4 ("Abriendo "++f++"...")
     decls <- loadFile f
-    mapM_ handleDecl decls
+    decls' <- mapM handleDecl decls
+    m <- getMode
+    case m of
+      Bytecompile -> do bytecode <- bytecompileModule $ catMaybes decls'
+                        printFD4 $ showBC bytecode
+                        liftIO $ bcWrite bytecode (dropExtension f ++ ".bc32")
+      _ -> return ()
     setInter i
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
@@ -131,17 +148,17 @@ evalDeclCEK (Decl p x ty e) = do
     e' <- evalCEK e
     return (Decl p x ty e')
 
-handleDecl :: MonadFD4 m => SDecl STerm -> m ()
+handleDecl :: MonadFD4 m => SDecl STerm -> m (Maybe (Decl TTerm))
 handleDecl (STDecl p name tydef) = 
   do  ty <- elabTypeWithName name tydef 
       def <- lookupTySyn name
       (case def of
-        Nothing -> addTySyn name ty
+        Nothing -> addTySyn name ty >> return Nothing
         t -> failPosFD4 p ("Sinónimo de tipo ya declarado para " ++ name))
 handleDecl d = handleDecl' d
 
 -- solo llega acá si no es una declaración de tipo
-handleDecl' ::  MonadFD4 m => SDecl STerm -> m ()
+handleDecl' ::  MonadFD4 m => SDecl STerm -> m (Maybe (Decl TTerm))
 handleDecl' d = do
         m <- getMode
         case m of
@@ -149,6 +166,7 @@ handleDecl' d = do
               (Decl p x ty tt) <- typecheckDecl d
               te <- eval tt
               addDecl (Decl p x ty te)
+              return $ Just (Decl p x ty te)
           Typecheck -> do
               f <- getLastFile
               printFD4 ("Chequeando tipos de "++f)
@@ -156,18 +174,20 @@ handleDecl' d = do
               addDecl td
               ppterm <- ppDecl td
               printFD4 ppterm
-          Eval -> do
-              td <- typecheckDecl d
-              ed <- evalDecl td
-              addDecl ed
-          CEK -> do
-              td <- typecheckDecl d
-              ed <- evalDeclCEK td
-              addDecl ed
+              return Nothing
+          Eval -> evalAndAdd evalDecl d
+          CEK -> evalAndAdd evalDeclCEK d
+          Bytecompile -> evalAndAdd return d
+          RunVM -> return Nothing
 
-      where
-        typecheckDecl :: MonadFD4 m => SDecl STerm -> m (Decl TTerm)
-        typecheckDecl a = elabDecl a >>= tcDecl
+evalAndAdd :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl STerm -> m (Maybe (Decl TTerm))
+evalAndAdd evalF d = do td <- typecheckDecl d
+                        ed <- evalF td
+                        addDecl ed
+                        return $ Just ed
+
+typecheckDecl :: MonadFD4 m => SDecl STerm -> m (Decl TTerm)
+typecheckDecl a = elabDecl a >>= tcDecl
 
 
 data Command = Compile CompileForm
@@ -249,7 +269,7 @@ compilePhrase ::  MonadFD4 m => String -> m ()
 compilePhrase x = do
     dot <- parseIO "<interactive>" declOrTm x
     case dot of
-      Left d  -> handleDecl d
+      Left d  -> void $ handleDecl d 
       Right t -> handleTerm t
 
 handleTerm ::  MonadFD4 m => STerm -> m ()
