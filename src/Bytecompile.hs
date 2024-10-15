@@ -116,13 +116,11 @@ bcc (V _ (Global x)) = failFD4 $ "Variable global en bytecode "++x
 bcc (Const _ (CNat n)) = return [CONST, n]
 bcc (Lam _ _ _ (Sc1 t)) = do t' <- bcc t
                              return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN]
--- creo que llevamos la longitud para no meter el return? o si?
 bcc (App _ t1 t2) = do t1' <- bcc t1
                        t2' <- bcc t2
                        return $ t1'++ t2'++ [CALL]
 bcc (Print _ s t)  = do t' <- bcc t
                         return $ t' ++ [PRINT] ++ string2bc s ++ [NULL] ++ [PRINTN]
-                         --[PRINT] ++ string2bc s ++ [NULL] ++ t' ++ [PRINTN]
 bcc (BinaryOp _ Add t1 t2) = do t1' <- bcc t1
                                 t2' <- bcc t2
                                 return $ t1'++ t2' ++ [ADD]
@@ -131,7 +129,6 @@ bcc (BinaryOp _ Sub t1 t2) = do t1' <- bcc t1
                                 return $ t1'++ t2' ++ [SUB]
 bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bcc t
                                  return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN, FIX]
-                                 -- mismo tema con el return
 bcc (IfZ _ c t1 t2) = do c' <- bcc c
                          t1' <- bcc t1
                          t2' <- bcc t2
@@ -168,8 +165,9 @@ module2tterm [] = failFD4 "Modulo vacío"
 module2tterm [Decl _ _ _ t] = return t
 module2tterm (Decl p n ty t:m) = do t' <- module2tterm m
                                     return $ Let (p,ty) n ty t (close n t')
-                                    -- el tipo de info esta mal, pero no se usa (lo dejamos asi?)
-                                    -- also, estoy haciendo bien el manejo de variables?
+-- Creo que el tipo que se la pasa a info esta mal, pero no se usa. Se podría armar una función para
+-- construir el tipo correcto, pero a esta altura ya se paso por el TypeChecker y los tipos más adelante
+-- se descartan, así no vale la pena.
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
 bytecompileModule m = let m' = global2free m
