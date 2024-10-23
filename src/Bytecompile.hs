@@ -26,9 +26,18 @@ import Data.Binary.Get ( getWord32le, isEmpty )
 
 import Data.List (intercalate)
 import Data.Char
+import Eval (semOp)
 
 type Opcode = Int
 type Bytecode = [Int]
+
+data Val = I Int 
+          | Fun Environment Bytecode 
+          | RA Environment Bytecode deriving Show
+
+type Environment = [Val]
+type Stack = [Val]
+data EFix = FixFun EFix Bytecode Environment
 
 newtype Bytecode32 = BC { un32 :: [Word32] }
 
@@ -73,6 +82,7 @@ pattern DROP     = 12
 pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
+pattern IFZ      = 16
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -100,7 +110,34 @@ showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
-bcc t = failFD4 "implementame!"
+bcc (V _ (Bound i)) = return [ACCESS, i]
+bcc (V _ (Free x)) = failFD4 $ "Variable libre en bytecode "++x
+bcc (V _ (Global x)) = failFD4 $ "Variable global en bytecode "++x
+bcc (Const _ (CNat n)) = return [CONST, n]
+bcc (Lam _ _ _ (Sc1 t)) = do t' <- bcc t
+                             return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN]
+bcc (App _ t1 t2) = do t1' <- bcc t1
+                       t2' <- bcc t2
+                       return $ t1'++ t2'++ [CALL]
+bcc (Print _ s t)  = do t' <- bcc t
+                        return $ t' ++ [PRINT] ++ string2bc s ++ [NULL] ++ [PRINTN]
+bcc (BinaryOp _ Add t1 t2) = do t1' <- bcc t1
+                                t2' <- bcc t2
+                                return $ t1'++ t2' ++ [ADD]
+bcc (BinaryOp _ Sub t1 t2) = do t1' <- bcc t1
+                                t2' <- bcc t2
+                                return $ t1'++ t2' ++ [SUB]
+bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bcc t
+                                 return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN, FIX]
+bcc (IfZ _ c t1 t2) = do c' <- bcc c
+                         t1' <- bcc t1
+                         t2' <- bcc t2
+                         return $ c'++ [IFZ, length t1' + 2] ++ t1' ++ [JUMP, length t2'] ++ t2'
+-- esto de length me genera dudas con el hecho de si puede ser interpretado como algo tipo CALL = 5
+-- en teoria no pq siempre voy a encontrar antes un IFZ que una longitud
+bcc (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
+                                 t2' <- bcc t2
+                                 return $ t1' ++ [SHIFT] ++ t2' ++ [DROP]
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
@@ -110,8 +147,33 @@ string2bc = map ord
 bc2string :: Bytecode -> String
 bc2string = map chr
 
+global2free :: Module -> Module
+global2free = map (\ (Decl i n ty t) -> Decl i n ty (rename t))
+                where rename (V i (Global n)) =  V i (Free n)
+                      rename t@(V _ _) = t
+                      rename t@(Const _ _) = t
+                      rename (Lam i n ty (Sc1 t)) = Lam i n ty (Sc1 (rename t))
+                      rename (App i t1 t2) = App i (rename t1) (rename t2)
+                      rename (Print i s t) = Print i s (rename t)
+                      rename (BinaryOp i b t1 t2) = BinaryOp i b (rename t1) (rename t2)
+                      rename (Fix i x xty f fty (Sc2 t)) = Fix i x xty f fty (Sc2 (rename t))
+                      rename (IfZ i t1 t2 t3) = IfZ i (rename t1) (rename t2) (rename t3)
+                      rename (Let i x xty t1 (Sc1 t2)) = Let i x xty (rename t1) (Sc1 (rename t2))
+
+module2tterm :: MonadFD4 m => Module -> m TTerm
+module2tterm [] = failFD4 "Modulo vacío"
+module2tterm [Decl _ _ _ t] = return t
+module2tterm (Decl p n ty t:m) = do t' <- module2tterm m
+                                    return $ Let (p,ty) n ty t (close n t')
+-- Creo que el tipo que se la pasa a info esta mal, pero no se usa. Se podría armar una función para
+-- construir el tipo correcto, pero a esta altura ya se paso por el TypeChecker y los tipos más adelante
+-- se descartan, así no vale la pena.
+
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = failFD4 "implementame!"
+bytecompileModule m = let m' = global2free m
+                      in do t <- module2tterm m'
+                            bc <- bcc t
+                            return $ bc ++ [STOP]
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()
@@ -126,4 +188,30 @@ bcRead :: FilePath -> IO Bytecode
 bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
 
 runBC :: MonadFD4 m => Bytecode -> m ()
-runBC bc = failFD4 "implementame!"
+runBC bc = runBC' bc [] []
+
+runBC' :: MonadFD4 m => Bytecode -> Environment -> Stack -> m ()
+runBC' (CONST:n:c) e s = runBC' c e (I n:s) 
+runBC' (ADD:c) e (I n:I m:s) = runBC' c e (I (semOp Add m n):s)
+runBC' (SUB:c) e (I n:I m:s) = runBC' c e (I (semOp Sub m n):s)
+runBC' (ACCESS:i:c) e s = runBC' c e (e!!i:s)
+runBC' (CALL:c) e (v:Fun ef cf:s) = runBC' cf (v:ef) (RA e c:s)
+runBC' (FUNCTION:len:c) e s = runBC' (drop len c) e (Fun e (take len c):s)
+runBC' (RETURN:_) _ (v:RA e c:s) = runBC' c e (v:s)
+runBC' (SHIFT:c) e (v:s) = runBC' c (v:e) s
+runBC' (DROP:c) (v:e) s = runBC' c e s
+runBC' (PRINTN:c) e st@(I n:s) = do printFD4 (show n)
+                                    runBC' c e st
+runBC' (PRINT:c) e s = let (bcstr, _:c') = span (/= NULL) c
+                           str = bc2string bcstr 
+                       in do printFD4NoNewLine str
+                             runBC' c' e s
+runBC' (FIX:c) e (Fun ef cf:s) = let efix = Fun efix cf:ef
+                                 in runBC' c e (Fun efix cf:s)
+runBC' (JUMP:n:c) e s = runBC' (drop n c) e s  
+runBC' (IFZ:len:c) e (I b:s) = if b == 0
+                                  then runBC' c e s -- no tenemos que mantener b en la pila, no?
+                                  else runBC' (drop len c) e s
+runBC' (STOP:_) _ _ = return ()
+runBC' c _ _ = do printFD4 (showBC c)
+                  failFD4 "Bytecode mal formado"

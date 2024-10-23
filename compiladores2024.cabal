@@ -38,6 +38,7 @@ executable compiladores2024
         Subst
         TypeChecker
         CEK
+        Bytecompile
 
     ghc-options: 
         -threaded 
