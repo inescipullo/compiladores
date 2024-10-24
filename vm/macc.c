@@ -36,6 +36,7 @@ enum {
 	PRINT    = 13,
 	PRINTN   = 14,
 	JUMP     = 15,
+	IFZ      = 16,
 };
 
 #define quit(...)							\
@@ -192,8 +193,17 @@ void run(code init_c)
 		/* Consumimos un opcode y lo inspeccionamos. */
 		switch(*c++) {
 		case ACCESS: {
-			/* implementame */
-			abort();
+			/* 
+			 * Una variable: leemos el índice, recuperamos el valor 
+			 * de la variable del entorno y lo agregamos en la pila. 
+			 */
+			uint32_t i = *c++;
+			env e2 = e;
+			for (int j = 0; j < i; j++) {
+				e2 = e2->next;
+			}
+			(*s++) = e2->v;
+			break;
 		}
 
 		case CONST: {
@@ -318,13 +328,15 @@ void run(code init_c)
 		}
 
 		case SHIFT: {
-			/* implementame */
-			abort();
+			/* Sacamos un valor de la pila y lo agregamos al entorno. */
+			e = env_push(e, *--s);
+			break;
 		}
 
 		case DROP: {
-			/* implementame */
-			abort();
+			/* Sacamos un valor del entorno (y se tira). */
+			e = e->next;
+			break;
 		}
 
 		case PRINTN: {
@@ -338,6 +350,26 @@ void run(code init_c)
 			while ((wc = *c++))
 				putwchar(wc);
 
+			break;
+		}
+
+		case JUMP: {
+			/* Leemos la candtidad de instrucciones a saltar, y hacemos el salto. */
+			uint32_t n = *c++;
+			c += n;
+			break;
+		}
+
+		case IFZ: {
+			/* 
+			 * Sacamos la condición (ya evaluada) de la pilala y la cantidad 
+			 * de instrucciones a saltar si la condición no es 0.
+			 */
+			uint32_t len = *c++;
+			uint32_t cond = (*--s).i;
+			if (cond != 0) {
+				c += len;
+			}
 			break;
 		}
 
