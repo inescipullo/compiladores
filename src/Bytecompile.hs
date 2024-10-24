@@ -83,6 +83,7 @@ pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
 pattern IFZ      = 16
+pattern TAILCALL = 17
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -104,6 +105,8 @@ showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
+showOps (IFZ:i:xs)       = ("IFZ off=" ++ show i) : showOps xs
+showOps (TAILCALL:xs)    = "TAILCALL" : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
@@ -114,8 +117,8 @@ bcc (V _ (Bound i)) = return [ACCESS, i]
 bcc (V _ (Free x)) = failFD4 $ "Variable libre en bytecode "++x
 bcc (V _ (Global x)) = failFD4 $ "Variable global en bytecode "++x
 bcc (Const _ (CNat n)) = return [CONST, n]
-bcc (Lam _ _ _ (Sc1 t)) = do t' <- bcc t
-                             return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN]
+bcc (Lam _ _ _ (Sc1 t)) = do t' <- bct t  -- bct agrega un RETURN al final
+                             return $ [FUNCTION, length t' + 1] ++ t'
 bcc (App _ t1 t2) = do t1' <- bcc t1
                        t2' <- bcc t2
                        return $ t1'++ t2'++ [CALL]
@@ -138,6 +141,20 @@ bcc (IfZ _ c t1 t2) = do c' <- bcc c
 bcc (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
                                  t2' <- bcc t2
                                  return $ t1' ++ [SHIFT] ++ t2' ++ [DROP]
+
+bct :: MonadFD4 m => TTerm -> m Bytecode
+bct (App _ t1 t2) = do t1' <- bcc t1
+                       t2' <- bcc t2
+                       return $ t1'++ t2'++ [TAILCALL]
+bct (IfZ _ c t1 t2) = do c' <- bcc c
+                         t1' <- bct t1
+                         t2' <- bct t2
+                         return $ c' ++ [IFZ, length t1'] ++ t1' ++ t2'
+bct (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
+                                 t2' <- bct t2
+                                 return $ t1' ++ [SHIFT] ++ t2'
+bct t = do t' <- bcc t
+           return $ t' ++ [RETURN]
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
@@ -213,5 +230,6 @@ runBC' (IFZ:len:c) e (I b:s) = if b == 0
                                   then runBC' c e s -- no tenemos que mantener b en la pila, no?
                                   else runBC' (drop len c) e s
 runBC' (STOP:_) _ _ = return ()
+runBC' (TAILCALL:c) e (v:Fun ef cf:RA e' c':s) = runBC' cf (v:ef) (RA e' c':s)
 runBC' c _ _ = do printFD4 (showBC c)
                   failFD4 "Bytecode mal formado"
