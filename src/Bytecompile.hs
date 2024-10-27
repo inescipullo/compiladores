@@ -118,7 +118,7 @@ bcc (V _ (Free x)) = failFD4 $ "Variable libre en bytecode "++x
 bcc (V _ (Global x)) = failFD4 $ "Variable global en bytecode "++x
 bcc (Const _ (CNat n)) = return [CONST, n]
 bcc (Lam _ _ _ (Sc1 t)) = do t' <- bct t  -- bct agrega un RETURN al final
-                             return $ [FUNCTION, length t' + 1] ++ t'
+                             return $ [FUNCTION, length t'] ++ t'
 bcc (App _ t1 t2) = do t1' <- bcc t1
                        t2' <- bcc t2
                        return $ t1'++ t2'++ [CALL]
@@ -130,8 +130,8 @@ bcc (BinaryOp _ Add t1 t2) = do t1' <- bcc t1
 bcc (BinaryOp _ Sub t1 t2) = do t1' <- bcc t1
                                 t2' <- bcc t2
                                 return $ t1'++ t2' ++ [SUB]
-bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bcc t
-                                 return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN, FIX]
+bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bct t
+                                 return $ [FUNCTION, length t'] ++ t' ++ [FIX]
 bcc (IfZ _ c t1 t2) = do c' <- bcc c
                          t1' <- bcc t1
                          t2' <- bcc t2
@@ -227,9 +227,9 @@ runBC' (FIX:c) e (Fun ef cf:s) = let efix = Fun efix cf:ef
                                  in runBC' c e (Fun efix cf:s)
 runBC' (JUMP:n:c) e s = runBC' (drop n c) e s  
 runBC' (IFZ:len:c) e (I b:s) = if b == 0
-                                  then runBC' c e s -- no tenemos que mantener b en la pila, no?
+                                  then runBC' c e s
                                   else runBC' (drop len c) e s
+runBC' (TAILCALL:_) _ (v:Fun ef cf:RA e c:s) = runBC' cf (v:ef) (RA e c:s)
 runBC' (STOP:_) _ _ = return ()
-runBC' (TAILCALL:c) e (v:Fun ef cf:RA e' c':s) = runBC' cf (v:ef) (RA e' c':s)
 runBC' c _ _ = do printFD4 (showBC c)
                   failFD4 "Bytecode mal formado"

@@ -37,6 +37,7 @@ enum {
 	PRINTN   = 14,
 	JUMP     = 15,
 	IFZ      = 16,
+	TAILCALL = 17,
 };
 
 #define quit(...)							\
@@ -370,6 +371,21 @@ void run(code init_c)
 			if (cond != 0) {
 				c += len;
 			}
+			break;
+		}
+
+		case TAILCALL: {
+			/*
+			 * Tailcall: tenemos en la pila un valor y una dirección,
+			 * de retorno (junto a su entorno). Saltamos a la
+			 * dirección de retorno y a su entorno, pero dejamos el
+			 * valor de retorno en la pila.
+			 */
+			value v = *--s;
+			value fun = *--s;
+
+			c = fun.clo.clo_body;
+			e = env_push(fun.clo.clo_env, v);
 			break;
 		}
 
