@@ -156,11 +156,16 @@ bct (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
 bct t = do t' <- bcc t
            return $ t' ++ [RETURN]
 
-bccWODrop :: MonadFD4 m => TTerm -> m Bytecode
-bccWODrop (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
-                                       t2' <- bcc t2
-                                       return $ t1' ++ [SHIFT] ++ t2'
-bccWODrop t = bcc t
+bccStop :: MonadFD4 m => TTerm -> m Bytecode
+bccStop (IfZ _ c t1 t2) = do c' <- bcc c
+                             t1' <- bcc t1
+                             t2' <- bcc t2
+                             return $ c' ++ [IFZ, length t1' + 1] ++ t1' ++ [STOP] ++ t2' ++ [STOP]
+bccStop (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
+                                     t2' <- bcc t2
+                                     return $ t1' ++ [SHIFT] ++ t2' ++ [STOP]
+bccStop t = do t' <- bcc t
+               return $ t' ++ [STOP]
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
@@ -195,8 +200,7 @@ module2tterm (Decl p n ty t:m) = do t' <- module2tterm m
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
 bytecompileModule m = let m' = global2free m
                       in do t <- module2tterm m'
-                            bc <- bccWODrop t
-                            return $ bc ++ [STOP]
+                            bccStop t
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()
