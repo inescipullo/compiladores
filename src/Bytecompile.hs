@@ -156,6 +156,12 @@ bct (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
 bct t = do t' <- bcc t
            return $ t' ++ [RETURN]
 
+bccWODrop :: MonadFD4 m => TTerm -> m Bytecode
+bccWODrop (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
+                                       t2' <- bcc t2
+                                       return $ t1' ++ [SHIFT] ++ t2'
+bccWODrop t = bcc t
+
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
 string2bc :: String -> Bytecode
@@ -189,7 +195,7 @@ module2tterm (Decl p n ty t:m) = do t' <- module2tterm m
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
 bytecompileModule m = let m' = global2free m
                       in do t <- module2tterm m'
-                            bc <- bcc t
+                            bc <- bccWODrop t
                             return $ bc ++ [STOP]
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
