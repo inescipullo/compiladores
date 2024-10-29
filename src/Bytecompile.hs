@@ -84,6 +84,7 @@ pattern PRINTN   = 14
 pattern JUMP     = 15
 pattern IFZ      = 16
 pattern TAILCALL = 17
+pattern POP      = 18
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -107,6 +108,7 @@ showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
 showOps (IFZ:i:xs)       = ("IFZ off=" ++ show i) : showOps xs
 showOps (TAILCALL:xs)    = "TAILCALL" : showOps xs
+showOps (POP:xs)         = "POP" : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
@@ -138,9 +140,41 @@ bcc (IfZ _ c t1 t2) = do c' <- bcc c
                          return $ c'++ [IFZ, length t1' + 2] ++ t1' ++ [JUMP, length t2'] ++ t2'
 -- esto de length me genera dudas con el hecho de si puede ser interpretado como algo tipo CALL = 5
 -- en teoria no pq siempre voy a encontrar antes un IFZ que una longitud
-bcc (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
-                                 t2' <- bcc t2
-                                 return $ t1' ++ [SHIFT] ++ t2' ++ [DROP]
+{-bcc (Let _ "_" _ t1 (Sc1 t2)) = do t1' <- bcc t1
+                                   t2' <- bcc t2
+                                   return $ t1' ++ [POP] ++ t2'-}
+bcc (Let _ _ _ t1 (Sc1 t2)) | isVarUsed t2 = do t1' <- bcc t1
+                                                t2' <- bcc t2
+                                                return $ t1' ++ [SHIFT] ++ t2' ++ [DROP]
+                            | otherwise = do t1' <- bcc t1
+                                             t2' <- bcc (changeIndexes t2)
+                                             return $ t1' ++ [POP] ++ t2'
+
+changeIndexes :: TTerm -> TTerm
+changeIndexes = varChanger (\_ p n -> V p (Free n)) bnd 
+  where
+    bnd d p i
+     | i > d = V p (Bound (i - 1))
+     | otherwise = V p (Bound i)
+
+
+isVarUsed :: TTerm -> Bool
+isVarUsed = go 0
+  where
+    go idx (V _ (Bound i)) = i == idx
+    go idx (V _ _) = False
+    go idx (Const _ _) = False
+    go idx (Lam _ _ _ (Sc1 t1)) = go (idx+1) t1
+    go idx (App _ t1 t2) = 
+        go idx t1 || go idx t2
+    go idx (Print _ _ t1) = go idx t1
+    go idx (BinaryOp _ _ t1 t2) = 
+        go idx t1 || go idx t2
+    go idx (Fix _ _ _ _ _ (Sc2 t1)) = go (idx+2) t1
+    go idx (IfZ _ c t1 t2) = 
+        go idx c || go idx t1 || go idx t2
+    go idx (Let _ _ _ def (Sc1 body)) =
+        go idx def || go (idx+1) body
 
 bct :: MonadFD4 m => TTerm -> m Bytecode
 bct (App _ t1 t2) = do t1' <- bcc t1
@@ -150,9 +184,12 @@ bct (IfZ _ c t1 t2) = do c' <- bcc c
                          t1' <- bct t1
                          t2' <- bct t2
                          return $ c' ++ [IFZ, length t1'] ++ t1' ++ t2'
-bct (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
-                                 t2' <- bct t2
-                                 return $ t1' ++ [SHIFT] ++ t2'
+bct (Let _ _ _ t1 (Sc1 t2)) | isVarUsed t2 = do t1' <- bcc t1
+                                                t2' <- bct t2
+                                                return $ t1' ++ [SHIFT] ++ t2'
+                            | otherwise = do t1' <- bcc t1
+                                             t2' <- bct (changeIndexes t2)
+                                             return $ t1' ++ [POP] ++ t2'
 bct t = do t' <- bcc t
            return $ t' ++ [RETURN]
 
@@ -239,7 +276,9 @@ runBC' (JUMP:n:c) e s = runBC' (drop n c) e s
 runBC' (IFZ:len:c) e (I b:s) = if b == 0
                                   then runBC' c e s
                                   else runBC' (drop len c) e s
-runBC' (TAILCALL:_) _ (v:Fun ef cf:RA e c:s) = runBC' cf (v:ef) (RA e c:s)
+runBC' (TAILCALL:_) _ stack@(v:Fun ef cf:RA e c:s) = --do printFD4 $ "len stack " ++ show (length stack)
+                                                        runBC' cf (v:ef) (RA e c:s)
+runBC' (POP:c) e (_:s) = runBC' c e s
 runBC' (STOP:_) _ _ = return ()
 runBC' c _ _ = do printFD4 (showBC c)
                   failFD4 "Bytecode mal formado"

@@ -38,6 +38,7 @@ enum {
 	JUMP     = 15,
 	IFZ      = 16,
 	TAILCALL = 17,
+	POP      = 18,
 };
 
 #define quit(...)							\
@@ -386,6 +387,11 @@ void run(code init_c)
 
 			c = fun.clo.clo_body;
 			e = env_push(fun.clo.clo_env, v);
+			break;
+		}
+
+		case POP: {
+			--s;
 			break;
 		}
 
