@@ -129,7 +129,7 @@ compileFile f = do
     case m of
       Bytecompile -> do bytecode <- bytecompileModule $ catMaybes decls'
                         printFD4 $ showBC bytecode
-                        liftIO $ bcWrite bytecode (dropExtension f ++ ".bc32")
+                        liftIO $ bcWrite bytecode (dropExtension f ++ ".bc")
       _ -> return ()
     setInter i
 
