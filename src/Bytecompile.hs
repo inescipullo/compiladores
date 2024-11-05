@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Bytecompile
 Description : Compila a bytecode. Ejecuta bytecode.
@@ -138,17 +137,13 @@ bcc (IfZ _ c t1 t2) = do c' <- bcc c
                          t1' <- bcc t1
                          t2' <- bcc t2
                          return $ c'++ [IFZ, length t1' + 2] ++ t1' ++ [JUMP, length t2'] ++ t2'
--- esto de length me genera dudas con el hecho de si puede ser interpretado como algo tipo CALL = 5
--- en teoria no pq siempre voy a encontrar antes un IFZ que una longitud
-{-bcc (Let _ "_" _ t1 (Sc1 t2)) = do t1' <- bcc t1
-                                   t2' <- bcc t2
-                                   return $ t1' ++ [POP] ++ t2'-}
 bcc (Let _ _ _ t1 (Sc1 t2)) | isVarUsed t2 = do t1' <- bcc t1
                                                 t2' <- bcc t2
                                                 return $ t1' ++ [SHIFT] ++ t2' ++ [DROP]
                             | otherwise = do t1' <- bcc t1
                                              t2' <- bcc (changeIndexes t2)
                                              return $ t1' ++ [POP] ++ t2'
+-- cambiamos compilacion mas lenta por corrida mas rapida. Hacerlo en menos de n^2?
 
 changeIndexes :: TTerm -> TTerm
 changeIndexes = varChanger (\_ p n -> V p (Free n)) bnd 
