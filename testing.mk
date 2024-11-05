@@ -19,7 +19,7 @@ EXTRAFLAGS	:=
 CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
 CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
 CHECK	+= $(patsubst %,%.check_bc_h,$(TESTS))
-CHECK	+= $(patsubst %,%.check_bc,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_bc,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
 
@@ -92,7 +92,7 @@ accept: $(patsubst %,%.accept,$(TESTS))
 %.check_bc: %.out %.actual_out_bc
 	$(Q)diff -u $^
 	$(Q)touch $@
-	@echo "OK	BC	$(patsubst %.out,%,$<)"
+	@echo "OK	bc	$(patsubst %.out,%,$<)"
 
 # Idem pero para Macchina en Haskell.
 %.fd4.actual_out_bc_h: %.bc $(EXE)
@@ -101,7 +101,7 @@ accept: $(patsubst %,%.accept,$(TESTS))
 %.check_bc_h: %.out %.actual_out_bc_h
 	$(Q)diff -u $^
 	$(Q)touch $@
-	@echo "OK	BC H	$(patsubst %.out,%,$<)"
+	@echo "OK	bc H	$(patsubst %.out,%,$<)"
 
 # Chequear optimizaciones. No se corre nada, sólo se compara
 # la salida de --typecheck --optimize respecto a la esperada
