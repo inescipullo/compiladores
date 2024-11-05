@@ -17,9 +17,9 @@ EXTRAFLAGS	:=
 # Las reglas a chequear. Se puede deshabilitar toda una familia de tests
 # comentando una de estas líneas.
 CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
-CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
-CHECK	+= $(patsubst %,%.check_bc32_h,$(TESTS))
-# CHECK	+= $(patsubst %,%.check_bc32,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_bc_h,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_bc,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
 
@@ -81,27 +81,27 @@ accept: $(patsubst %,%.accept,$(TESTS))
 
 # Bytecode. Primero la regla para generar el bytecode, no se chequea
 # nada.
-%.bc32: %.fd4 $(EXE)
+%.bc: %.fd4 $(EXE)
 	$(Q)$(EXE) $(EXTRAFLAGS) --bytecompile $< >/dev/null
 
 # Correr bytecode para generar la salida (con VM en C).
 # Finalmente la comparación.
-%.fd4.actual_out_bc32: %.bc32 $(VM)
+%.fd4.actual_out_bc: %.bc $(VM)
 	$(Q)$(VM) $< > $@
 
-%.check_bc32: %.out %.actual_out_bc32
+%.check_bc: %.out %.actual_out_bc
 	$(Q)diff -u $^
 	$(Q)touch $@
-	@echo "OK	BC32	$(patsubst %.out,%,$<)"
+	@echo "OK	bc	$(patsubst %.out,%,$<)"
 
 # Idem pero para Macchina en Haskell.
-%.fd4.actual_out_bc32_h: %.bc32 $(EXE)
+%.fd4.actual_out_bc_h: %.bc $(EXE)
 	$(Q)$(EXE) $(EXTRAFLAGS) --runVM $< > $@
 
-%.check_bc32_h: %.out %.actual_out_bc32_h
+%.check_bc_h: %.out %.actual_out_bc_h
 	$(Q)diff -u $^
 	$(Q)touch $@
-	@echo "OK	BC32 H	$(patsubst %.out,%,$<)"
+	@echo "OK	bc H	$(patsubst %.out,%,$<)"
 
 # Chequear optimizaciones. No se corre nada, sólo se compara
 # la salida de --typecheck --optimize respecto a la esperada
@@ -132,10 +132,10 @@ accept: $(patsubst %,%.accept,$(TESTS))
 # así podemos examinarlos, particularmente cuando algo no anda.
 .SECONDARY: $(patsubst %,%.actual_out_eval,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_cek,$(TESTS))
-.SECONDARY: $(patsubst %,%.actual_out_bc32,$(TESTS))
-.SECONDARY: $(patsubst %,%.actual_out_bc32_h,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_bc,$(TESTS))
+.SECONDARY: $(patsubst %,%.actual_out_bc_h,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_out_eval_opt,$(TESTS))
 .SECONDARY: $(patsubst %,%.actual_opt_out,$(TESTS))
-.SECONDARY: $(patsubst %.fd4,%.bc32,$(TESTS))
+.SECONDARY: $(patsubst %.fd4,%.bc,$(TESTS))
 
 .PHONY: test_all accept
