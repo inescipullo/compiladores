@@ -25,7 +25,7 @@ vm:
 	$(MAKE) -C vm
 
 test_clean:
-	find tests/ok/ \( -name "*.actual*" -o -name "*.bc8" -o -name "*.check*" -o -name "*.fd4.c" -o -name "*.fd4.c.out" \) -exec rm {} \;
+	find tests/ok/ \( -name "*.actual*" -o -name "*.bc" -o -name "*.check*" -o -name "*.c" -o -name "*.bin" \) -exec rm {} \;
 	@echo "Se eliminaron los archivos complementarios de test."
 
 .PHONY: vm
