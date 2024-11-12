@@ -12,7 +12,7 @@ data Ir = IrVar Name
         | IrLet Name IrTy Ir Ir
         | IrIfZ Ir Ir Ir
         | MkClosure Name [Ir]
-        | IrAccess Ir IrTy Int
+        | IrAccess Ir IrTy Int --acceder elementos de clausura
   deriving Show
 
 data IrTy = IrInt

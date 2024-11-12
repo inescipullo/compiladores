@@ -1,5 +1,6 @@
 *.c
 *.bc
+*.bin
 
 *.check*
 *.actual_out*

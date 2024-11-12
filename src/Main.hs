@@ -37,6 +37,8 @@ import TypeChecker ( tc, tcDecl )
 import CEK
 import Bytecompile (bcRead, runBC, bytecompileModule, showBC, bcWrite)
 import System.FilePath (dropExtension)
+import C (ir2C)
+import ClosureConvert (runCC, ccWrite)
 
 prompt :: String
 prompt = "FD4> "
@@ -52,6 +54,7 @@ parseMode = (,) <$>
       <|> flag' CEK (long "cek" <> short 'k' <> help "Evaluar en la máquina CEK")
       <|> flag' Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la BVM")
       <|> flag' RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la BVM")
+      <|> flag' CC ( long "cc" <> short 'c' <> help "Compilar a código C")
       )
    <*> pure False
 
@@ -130,6 +133,10 @@ compileFile f = do
       Bytecompile -> do bytecode <- bytecompileModule $ catMaybes decls'
                         printFD4 $ showBC bytecode
                         liftIO $ bcWrite bytecode (dropExtension f ++ ".bc")
+      CC -> do
+        let codigoC = (ir2C . runCC . catMaybes) decls'
+        printFD4 codigoC
+        liftIO $ ccWrite codigoC (dropExtension f ++ ".c")
       _ -> return ()
     setInter i
 
@@ -178,6 +185,7 @@ handleDecl' d = do
           Eval -> evalAndAdd evalDecl d
           CEK -> evalAndAdd evalDeclCEK d
           Bytecompile -> evalAndAdd return d
+          CC -> evalAndAdd return d
           RunVM -> return Nothing
 
 evalAndAdd :: MonadFD4 m => (Decl TTerm -> m (Decl TTerm)) -> SDecl STerm -> m (Maybe (Decl TTerm))

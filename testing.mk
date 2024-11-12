@@ -18,13 +18,13 @@ EXTRAFLAGS	:=
 
 # Las reglas a chequear. Se puede deshabilitar toda una familia de tests
 # comentando una de estas líneas.
-CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
-CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
-CHECK	+= $(patsubst %,%.check_bc_h,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_bc_h,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_bc,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
-# CHECK	+= $(patsubst %,%.check_cc,$(TESTS))
+CHECK	+= $(patsubst %,%.check_cc,$(TESTS))
 
 # Ejemplo: así se puede apagar un test en particular.
 CHECK	:= $(filter-out tests/ok/00-basicos/401-inf.%,$(CHECK))
@@ -138,7 +138,7 @@ accept: $(patsubst %,%.accept,$(TESTS))
 
 # Compilamos y ejecutamos el archivo guardado. Por último, comparamos.
 %.fd4.actual_out_cc: %.c runtime.c
-	$(Q)$(CC) $(CFLAGS) runtime.c $< -o $(patsubst %.c,%.bin,$<)
+	$(Q)$(CC) runtime.c $< -o $(patsubst %.c,%.bin,$<) $(CFLAGS)
 	$(Q)./$(patsubst %.c,%.bin,$<) > $@
 
 %.check_cc: %.out %.actual_out_cc

@@ -39,6 +39,9 @@ executable compiladores2024
         TypeChecker
         CEK
         Bytecompile
+        IR
+        C
+        ClosureConvert
 
     ghc-options: 
         -threaded 

@@ -35,6 +35,7 @@ data Mode =
   | CEK
   | Bytecompile
   | RunVM
+  | CC
   
 data Conf = Conf {
     opt :: Bool,          --  ^ True, si estan habilitadas las optimizaciones.
