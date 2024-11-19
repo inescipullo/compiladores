@@ -10,7 +10,7 @@ freshen :: Name -> StateT Int (Writer [IrDecl]) Name
 freshen name = do 
     n <- get
     put (n+1)
-    return $ name ++ "_" ++ (show n)
+    return $ name ++ "_" ++ show n
 
 changeArgs :: Name -> [(Name, Ty)] -> Ir -> Ir
 changeArgs = go 1
@@ -28,10 +28,10 @@ ret2tyir (NatTy _) = undefined
 
 ty2tyir :: Ty -> IrTy
 ty2tyir (NatTy _) = IrInt
-ty2tyir (FunTy _ _ _) = IrClo
+ty2tyir (FunTy {}) = IrClo
 
 closureConvert :: TTerm -> StateT Int (Writer [IrDecl]) Ir
-closureConvert (V _ (Bound i)) = error $ "Bound en closureConvert " ++ (show i)
+closureConvert (V _ (Bound i)) = error $ "Bound en closureConvert " ++ show i
 closureConvert (V _ (Free s)) = return $ IrVar s
 closureConvert (V _ (Global s)) = return $ IrGlobal s
 closureConvert (Const _ c) = return $ IrConst c
@@ -51,13 +51,13 @@ closureConvert (BinaryOp _ op t1 t2) = do
 closureConvert (Let _ n ty def body) = do
     name <- freshen $ "_let_" ++ n 
     defir <- closureConvert def 
-    bodyir <- closureConvert (open name body) --
+    bodyir <- closureConvert (open name body)
     return $ IrLet name (ty2tyir ty) defir bodyir
-closureConvert (App _ ft xt) = do
+closureConvert t@(App _ ft xt) = do
     clos <- closureConvert ft
     t2ir <- closureConvert xt
     fun <- freshen "_fun"
-    let t2' = IrCall (IrAccess (IrVar fun) IrClo 0) [IrVar fun, t2ir] IrInt
+    let t2' = IrCall (IrAccess (IrVar fun) IrClo 0) [IrVar fun, t2ir] (ty2tyir (getTy t))
     return $ IrLet fun IrClo clos t2' 
 closureConvert (Lam (_,fty) name ty sc@(Sc1 t)) = do 
     namefun <- freshen $ "_lam_" ++ name 
@@ -77,7 +77,7 @@ closureConvert (Fix _ f fty x xty sc@(Sc2 t)) = do
     body' <- closureConvert (open2 nameclos namearg sc)
     let freevars = freeVarsWithTy t
     let body = changeArgs nameclos freevars body'
-    let decl = IrFun namefun (ty2tyir fty) [(nameclos, IrClo), (namearg, (ty2tyir xty))] body 
+    let decl = IrFun namefun (ret2tyir fty) [(nameclos, IrClo), (namearg, ty2tyir xty)] body 
     tell [decl]
     let listIr = map (IrVar . fst) freevars
     return $ MkClosure namefun listIr

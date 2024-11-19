@@ -13,6 +13,7 @@ EXE	:= $(shell cabal exec whereis compiladores2024 | awk '{print $$2};')
 VM	:= ./vm/macc
 CC  := gcc
 CFLAGS := -lgc
+# CFLAGS += -I/opt/homebrew/Cellar/bdw-gc/8.2.8/include -L/opt/homebrew/Cellar/bdw-gc/8.2.8/lib
 
 EXTRAFLAGS	:=
 
