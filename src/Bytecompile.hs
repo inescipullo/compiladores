@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RecordWildCards #-}
 {-|
 Module      : Bytecompile
 Description : Compila a bytecode. Ejecuta bytecode.
@@ -83,6 +82,8 @@ pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
 pattern IFZ      = 16
+pattern TAILCALL = 17
+pattern POP      = 18
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -104,6 +105,9 @@ showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
+showOps (IFZ:i:xs)       = ("IFZ off=" ++ show i) : showOps xs
+showOps (TAILCALL:xs)    = "TAILCALL" : showOps xs
+showOps (POP:xs)         = "POP" : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
@@ -114,8 +118,8 @@ bcc (V _ (Bound i)) = return [ACCESS, i]
 bcc (V _ (Free x)) = failFD4 $ "Variable libre en bytecode "++x
 bcc (V _ (Global x)) = failFD4 $ "Variable global en bytecode "++x
 bcc (Const _ (CNat n)) = return [CONST, n]
-bcc (Lam _ _ _ (Sc1 t)) = do t' <- bcc t
-                             return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN]
+bcc (Lam _ _ _ (Sc1 t)) = do t' <- bct t  -- bct agrega un RETURN al final
+                             return $ [FUNCTION, length t'] ++ t'
 bcc (App _ t1 t2) = do t1' <- bcc t1
                        t2' <- bcc t2
                        return $ t1'++ t2'++ [CALL]
@@ -127,17 +131,73 @@ bcc (BinaryOp _ Add t1 t2) = do t1' <- bcc t1
 bcc (BinaryOp _ Sub t1 t2) = do t1' <- bcc t1
                                 t2' <- bcc t2
                                 return $ t1'++ t2' ++ [SUB]
-bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bcc t
-                                 return $ [FUNCTION, length t' + 1] ++ t' ++ [RETURN, FIX]
+bcc (Fix _ _ _ _ _ (Sc2 t)) = do t' <- bct t
+                                 return $ [FUNCTION, length t'] ++ t' ++ [FIX]
 bcc (IfZ _ c t1 t2) = do c' <- bcc c
                          t1' <- bcc t1
                          t2' <- bcc t2
                          return $ c'++ [IFZ, length t1' + 2] ++ t1' ++ [JUMP, length t2'] ++ t2'
--- esto de length me genera dudas con el hecho de si puede ser interpretado como algo tipo CALL = 5
--- en teoria no pq siempre voy a encontrar antes un IFZ que una longitud
-bcc (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
-                                 t2' <- bcc t2
-                                 return $ t1' ++ [SHIFT] ++ t2' ++ [DROP]
+bcc (Let _ _ _ t1 (Sc1 t2)) | isVarUsed t2 = do t1' <- bcc t1
+                                                t2' <- bcc t2
+                                                return $ t1' ++ [SHIFT] ++ t2' ++ [DROP]
+                            | otherwise = do t1' <- bcc t1
+                                             t2' <- bcc (changeIndexes t2)
+                                             return $ t1' ++ [POP] ++ t2'
+-- cambiamos compilacion mas lenta por corrida mas rapida. Hacerlo en menos de n^2?
+
+changeIndexes :: TTerm -> TTerm
+changeIndexes = varChanger (\_ p n -> V p (Free n)) bnd 
+  where
+    bnd d p i
+     | i > d = V p (Bound (i - 1))
+     | otherwise = V p (Bound i)
+
+
+isVarUsed :: TTerm -> Bool
+isVarUsed = go 0
+  where
+    go idx (V _ (Bound i)) = i == idx
+    go idx (V _ _) = False
+    go idx (Const _ _) = False
+    go idx (Lam _ _ _ (Sc1 t1)) = go (idx+1) t1
+    go idx (App _ t1 t2) = 
+        go idx t1 || go idx t2
+    go idx (Print _ _ t1) = go idx t1
+    go idx (BinaryOp _ _ t1 t2) = 
+        go idx t1 || go idx t2
+    go idx (Fix _ _ _ _ _ (Sc2 t1)) = go (idx+2) t1
+    go idx (IfZ _ c t1 t2) = 
+        go idx c || go idx t1 || go idx t2
+    go idx (Let _ _ _ def (Sc1 body)) =
+        go idx def || go (idx+1) body
+
+bct :: MonadFD4 m => TTerm -> m Bytecode
+bct (App _ t1 t2) = do t1' <- bcc t1
+                       t2' <- bcc t2
+                       return $ t1'++ t2'++ [TAILCALL]
+bct (IfZ _ c t1 t2) = do c' <- bcc c
+                         t1' <- bct t1
+                         t2' <- bct t2
+                         return $ c' ++ [IFZ, length t1'] ++ t1' ++ t2'
+bct (Let _ _ _ t1 (Sc1 t2)) | isVarUsed t2 = do t1' <- bcc t1
+                                                t2' <- bct t2
+                                                return $ t1' ++ [SHIFT] ++ t2'
+                            | otherwise = do t1' <- bcc t1
+                                             t2' <- bct (changeIndexes t2)
+                                             return $ t1' ++ [POP] ++ t2'
+bct t = do t' <- bcc t
+           return $ t' ++ [RETURN]
+
+bccStop :: MonadFD4 m => TTerm -> m Bytecode
+bccStop (IfZ _ c t1 t2) = do c' <- bcc c
+                             t1' <- bcc t1
+                             t2' <- bcc t2
+                             return $ c' ++ [IFZ, length t1' + 1] ++ t1' ++ [STOP] ++ t2' ++ [STOP]
+bccStop (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
+                                     t2' <- bcc t2
+                                     return $ t1' ++ [SHIFT] ++ t2' ++ [STOP]
+bccStop t = do t' <- bcc t
+               return $ t' ++ [STOP]
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
@@ -172,8 +232,7 @@ module2tterm (Decl p n ty t:m) = do t' <- module2tterm m
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
 bytecompileModule m = let m' = global2free m
                       in do t <- module2tterm m'
-                            bc <- bcc t
-                            return $ bc ++ [STOP]
+                            bccStop t
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()
@@ -210,8 +269,11 @@ runBC' (FIX:c) e (Fun ef cf:s) = let efix = Fun efix cf:ef
                                  in runBC' c e (Fun efix cf:s)
 runBC' (JUMP:n:c) e s = runBC' (drop n c) e s  
 runBC' (IFZ:len:c) e (I b:s) = if b == 0
-                                  then runBC' c e s -- no tenemos que mantener b en la pila, no?
+                                  then runBC' c e s
                                   else runBC' (drop len c) e s
+runBC' (TAILCALL:_) _ stack@(v:Fun ef cf:RA e c:s) = --do printFD4 $ "len stack " ++ show (length stack)
+                                                        runBC' cf (v:ef) (RA e c:s)
+runBC' (POP:c) e (_:s) = runBC' c e s
 runBC' (STOP:_) _ _ = return ()
 runBC' c _ _ = do printFD4 (showBC c)
                   failFD4 "Bytecode mal formado"
