@@ -138,7 +138,7 @@ accept: $(patsubst %,%.accept,$(TESTS))
 
 # Compilamos y ejecutamos el archivo guardado. Por último, comparamos.
 %.fd4.actual_out_cc: %.c runtime.c
-	$(Q)$(CC) $(CFLAGS) runtime.c $< -o $(patsubst %.c,%.bin,$<)
+	$(Q)$(CC) runtime.c $< -o $(patsubst %.c,%.bin,$<) $(CFLAGS)
 	$(Q)./$(patsubst %.c,%.bin,$<) > $@
 
 %.check_cc: %.out %.actual_out_cc
