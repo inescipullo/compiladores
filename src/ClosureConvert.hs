@@ -24,7 +24,7 @@ changeArgs = go 1
 
 ret2tyir :: Ty -> IrTy
 ret2tyir (FunTy _ _ t) = ty2tyir t
-ret2tyir (NatTy _) = undefined
+ret2tyir (NatTy _) = error "Termino lambda no puede tener tipo NatTy."
 
 ty2tyir :: Ty -> IrTy
 ty2tyir (NatTy _) = IrInt
