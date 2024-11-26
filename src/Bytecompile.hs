@@ -190,12 +190,12 @@ bct t = do t' <- bcc t
 
 bccStop :: MonadFD4 m => TTerm -> m Bytecode
 bccStop (IfZ _ c t1 t2) = do c' <- bcc c
-                             t1' <- bcc t1
-                             t2' <- bcc t2
-                             return $ c' ++ [IFZ, length t1' + 1] ++ t1' ++ [STOP] ++ t2' ++ [STOP]
+                             t1' <- bccStop t1
+                             t2' <- bccStop t2
+                             return $ c' ++ [IFZ, length t1'] ++ t1' ++ t2'
 bccStop (Let _ _ _ t1 (Sc1 t2)) = do t1' <- bcc t1
-                                     t2' <- bcc t2
-                                     return $ t1' ++ [SHIFT] ++ t2' ++ [STOP]
+                                     t2' <- bccStop t2
+                                     return $ t1' ++ [SHIFT] ++ t2'
 bccStop t = do t' <- bcc t
                return $ t' ++ [STOP]
 
